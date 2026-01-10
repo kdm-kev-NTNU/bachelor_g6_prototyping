@@ -1,9 +1,0 @@
-# Get a specific product by ID
-query GetProduct($id: Int!) {
-  product(id: $id) {
-    id
-    name
-    price
-    description
-  }
-}

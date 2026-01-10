@@ -1,8 +1,0 @@
-# Get all users from the database
-query GetUsers {
-  users {
-    id
-    name
-    email
-  }
-}

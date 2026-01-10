@@ -276,10 +276,10 @@ $response.data | ConvertTo-Json
 
 | File | Description |
 |------|-------------|
-| `mcp-config.yaml` | Example configuration (for reference) |
-| `operations/` | Pre-defined GraphQL operations (for reference) |
 | `start-mcp-server.ps1` | PowerShell script to start MCP server manually |
 | `README.md` | This documentation |
+
+> **Note:** `mcp-graphql` does automatic schema introspection, so no pre-defined operation files are needed.
 
 ---
 
