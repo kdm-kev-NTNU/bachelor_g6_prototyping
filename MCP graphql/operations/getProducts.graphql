@@ -1,0 +1,9 @@
+# Get all products from the database
+query GetProducts {
+  products {
+    id
+    name
+    price
+    description
+  }
+}

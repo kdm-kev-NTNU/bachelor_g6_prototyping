@@ -1,0 +1,8 @@
+# Get a specific user by ID
+query GetUser($id: Int!) {
+  user(id: $id) {
+    id
+    name
+    email
+  }
+}

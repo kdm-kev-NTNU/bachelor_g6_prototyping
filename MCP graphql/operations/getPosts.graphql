@@ -1,0 +1,14 @@
+# Get all posts with author information
+query GetPosts {
+  posts {
+    id
+    title
+    content
+    authorId
+    author {
+      id
+      name
+      email
+    }
+  }
+}

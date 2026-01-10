@@ -1,0 +1,14 @@
+# Get a specific post by ID
+query GetPost($id: Int!) {
+  post(id: $id) {
+    id
+    title
+    content
+    authorId
+    author {
+      id
+      name
+      email
+    }
+  }
+}
