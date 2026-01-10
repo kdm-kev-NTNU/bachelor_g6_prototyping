@@ -47,89 +47,230 @@ Your Strawberry GraphQL server exposes these operations:
 - **createUser(name, email)** - Create a new user
 - **createPost(title, content, authorId)** - Create a new post
 
-## Setup Instructions
+---
+
+## Quick Start Guide
 
 ### Prerequisites
 
-1. Node.js v18 or later
-2. GraphQL server running at `http://localhost:8000/graphql`
+Before you begin, make sure you have:
 
-### Step 1: Start the GraphQL Server
+| Requirement | Version | Check Command |
+|-------------|---------|---------------|
+| Python | 3.10+ | `python --version` |
+| Node.js | 18+ | `node --version` |
+| npm | 8+ | `npm --version` |
 
-```bash
-cd ../Schema-rag
+---
+
+## Step 1: Start the GraphQL Server
+
+The GraphQL server must be running before Claude can connect to it.
+
+### Option A: Using the main.py script
+
+```powershell
+# Navigate to the Schema-rag folder
+cd C:\Users\kevin\Documents\GitHub\NL-to-Graphql\Schema-rag
+
+# Activate virtual environment (if using one)
+# .\.venv\Scripts\Activate.ps1
+
+# Start the server
 python main.py
 ```
 
-### Step 2: Configure Claude Desktop
+### Option B: Using uvicorn directly
 
-The Claude Desktop configuration has been set up at:
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+```powershell
+cd C:\Users\kevin\Documents\GitHub\NL-to-Graphql\Schema-rag
 
-Configuration content:
+# Start with auto-reload (for development)
+uvicorn api.routes:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Verify GraphQL Server is Running
+
+Open your browser and go to: **http://localhost:8000/graphql**
+
+You should see the GraphQL Playground interface. Try this query:
+
+```graphql
+{
+  users {
+    id
+    name
+    email
+  }
+}
+```
+
+Or test from terminal (PowerShell):
+
+```powershell
+$body = '{"query": "{ users { id name email } }"}'
+Invoke-RestMethod -Uri "http://localhost:8000/graphql" -Method Post -ContentType "application/json" -Body $body
+```
+
+---
+
+## Step 2: Configure Claude Desktop for MCP
+
+### Find the Configuration File
+
+The Claude Desktop config file is located at:
+
+```
+Windows: %APPDATA%\Claude\claude_desktop_config.json
+macOS:   ~/Library/Application Support/Claude/claude_desktop_config.json
+Linux:   ~/.config/Claude/claude_desktop_config.json
+```
+
+### Edit the Configuration
+
+Open the file and add this configuration:
+
 ```json
 {
   "mcpServers": {
     "graphql-api": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-graphql",
-        "--endpoint",
-        "http://localhost:8000/graphql"
-      ]
+      "command": "cmd.exe",
+      "args": ["/c", "npx", "-y", "mcp-graphql"],
+      "env": {
+        "ENDPOINT": "http://localhost:8000/graphql"
+      }
     }
   }
 }
 ```
 
-### Step 3: Restart Claude Desktop
+> **Note:** The `mcp-graphql` package uses environment variables (not command-line arguments) since version 1.0.0.
 
-After configuring, restart Claude Desktop to load the MCP server.
+### Quick Edit via PowerShell
 
-### Step 4: Verify Setup
-
-In Claude Desktop, ask:
-> "What MCP tools do you have available?"
-
-Claude should list the GraphQL operations as available tools.
-
-## Example Usage in Claude
-
-Once configured, you can interact with your GraphQL API naturally:
-
-- "Show me all users in the database"
-- "Get the product with ID 1"
-- "Create a new user named John Doe with email john@example.com"
-- "List all posts with their authors"
-- "What products do you have available?"
-
-## Testing Manually
-
-You can test the MCP server manually:
-
-```bash
-# Test the GraphQL endpoint directly
-curl -X POST http://localhost:8000/graphql \
-  -H "Content-Type: application/json" \
-  -d '{"query": "{ users { id name email } }"}'
+```powershell
+# Open the config file in your default editor
+notepad "$env:APPDATA\Claude\claude_desktop_config.json"
 ```
+
+---
+
+## Step 3: Restart Claude Desktop
+
+**Important:** You must fully quit Claude Desktop, not just close the window!
+
+### Windows
+1. Right-click the Claude icon in the **system tray** (near the clock)
+2. Select **"Quit"** or **"Exit"**
+3. Open Claude Desktop again
+
+### Verify MCP Server is Running
+
+1. Open Claude Desktop
+2. Go to **Settings** (gear icon)
+3. Click **Developer** in the left menu
+4. Under **Local MCP servers**, you should see **"graphql-api"** with status **"running"**
+
+---
+
+## Step 4: Test the Integration
+
+In Claude Desktop, try these prompts:
+
+```
+"What MCP tools do you have available?"
+```
+
+```
+"Show me all users in the database"
+```
+
+```
+"Get all products"
+```
+
+```
+"Create a new user named Test User with email test@example.com"
+```
+
+---
+
+## Running Both Servers Together
+
+### Option 1: Two Terminal Windows
+
+**Terminal 1 - GraphQL Server:**
+```powershell
+cd C:\Users\kevin\Documents\GitHub\NL-to-Graphql\Schema-rag
+python main.py
+```
+
+**Terminal 2 - Test MCP manually (optional):**
+```powershell
+$env:ENDPOINT = "http://localhost:8000/graphql"
+npx -y mcp-graphql
+```
+
+### Option 2: Using the PowerShell Script
+
+```powershell
+cd "C:\Users\kevin\Documents\GitHub\NL-to-Graphql\MCP graphql"
+.\start-mcp-server.ps1
+```
+
+### Option 3: Background Process (GraphQL Server)
+
+```powershell
+# Start GraphQL server in background
+Start-Process -NoNewWindow -FilePath "python" -ArgumentList "main.py" -WorkingDirectory "C:\Users\kevin\Documents\GitHub\NL-to-Graphql\Schema-rag"
+
+# Check if it's running
+Invoke-RestMethod -Uri "http://localhost:8000/graphql" -Method Post -ContentType "application/json" -Body '{"query": "{ __typename }"}'
+```
+
+---
 
 ## Troubleshooting
 
-### Claude can't see the tools
-1. Make sure Claude Desktop is restarted after configuration
-2. Verify the GraphQL server is running at `http://localhost:8000/graphql`
-3. Check that Node.js v18+ is installed
+### GraphQL Server Issues
 
-### GraphQL errors
-1. Check that your Strawberry GraphQL server is running
-2. Test the GraphQL endpoint directly: `http://localhost:8000/graphql`
-3. Open GraphQL Playground at `http://localhost:8000/graphql` in your browser
+| Problem | Solution |
+|---------|----------|
+| Port 8000 already in use | `netstat -ano \| findstr :8000` then kill the process |
+| Module not found | `pip install -r requirements.txt` in Schema-rag folder |
+| Database errors | Delete `app.db` and run `python init.py` to recreate |
 
-### MCP server won't start
-1. Try running `npx -y mcp-graphql --endpoint http://localhost:8000/graphql` manually
-2. Check for npm/node errors in the console
+### MCP Server Issues
+
+| Problem | Solution |
+|---------|----------|
+| graphql-api not showing in Claude | Fully quit and restart Claude Desktop |
+| Server shows "error" status | Check Claude logs at `%APPDATA%\Claude\logs\mcp.log` |
+| npx command not found | Install Node.js 18+ and restart terminal |
+
+### Check Claude Desktop Logs
+
+```powershell
+# View MCP logs
+Get-Content "$env:APPDATA\Claude\logs\mcp.log" -Tail 50
+
+# View server-specific logs
+Get-Content "$env:APPDATA\Claude\logs\mcp-server-graphql-api.log" -Tail 50
+```
+
+### Test GraphQL Endpoint Directly
+
+```powershell
+# Simple query test
+$response = Invoke-RestMethod -Uri "http://localhost:8000/graphql" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{"query": "{ users { id name email } }"}'
+
+$response.data | ConvertTo-Json
+```
+
+---
 
 ## Files in This Folder
 
@@ -137,11 +278,34 @@ curl -X POST http://localhost:8000/graphql \
 |------|-------------|
 | `mcp-config.yaml` | Example configuration (for reference) |
 | `operations/` | Pre-defined GraphQL operations (for reference) |
-| `start-mcp-server.ps1` | PowerShell script to start manually |
+| `start-mcp-server.ps1` | PowerShell script to start MCP server manually |
 | `README.md` | This documentation |
+
+---
+
+## Example Conversations with Claude
+
+Once everything is set up, you can have natural conversations like:
+
+> **You:** "Show me all users in the database"
+> 
+> **Claude:** *Uses the GraphQL MCP tool to query users*
+> "Here are the users in your database:
+> 1. Alice Johnson (alice@example.com)
+> 2. Bob Smith (bob@example.com)
+> ..."
+
+> **You:** "Create a blog post titled 'Hello World' by user 1"
+> 
+> **Claude:** *Uses the createPost mutation*
+> "I've created a new post with the title 'Hello World' by Alice Johnson."
+
+---
 
 ## References
 
 - [mcp-graphql on npm](https://www.npmjs.com/package/mcp-graphql)
-- [Model Context Protocol](https://modelcontextprotocol.io/)
+- [Model Context Protocol Documentation](https://modelcontextprotocol.io/)
+- [MCP Server Build Guide](https://modelcontextprotocol.io/docs/develop/build-server)
 - [Apollo MCP Server Documentation](https://www.apollographql.com/docs/apollo-mcp-server)
+- [Strawberry GraphQL](https://strawberry.rocks/)
