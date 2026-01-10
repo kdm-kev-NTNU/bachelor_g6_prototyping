@@ -1,162 +1,141 @@
 """
-Load Knowledge Graph into FalkorDB
+Load Brick Ontology Knowledge Graph into FalkorDB
 
-This script loads the Brick-based energy knowledge graph into FalkorDB.
-It creates nodes for buildings, equipment, meters, sensors, and zones,
-along with their relationships.
+Creates a connected graph with brick_Building as root.
+All nodes have valid semantic paths to the Building.
 
 Usage:
-    python load_graph.py [--clear] [--host HOST] [--port PORT]
-    
-Options:
-    --clear     Clear existing graph before loading
-    --host      FalkorDB host (default: localhost)
-    --port      FalkorDB port (default: 6379)
+    python load_graph.py [--clear]
 """
 
 import argparse
 import sys
-from typing import List
-
 from falkor_client import FalkorDBClient, FalkorConfig
-from schema import BrickEntity, BrickRelationship, create_index_queries
-from seed_data import get_all_seed_data
+from seed_data import generate_cypher_statements, get_seed_summary
 
 
-def create_node_cypher(entity: BrickEntity) -> str:
-    """Generate Cypher CREATE statement for an entity."""
-    label = entity.brick_class.value
-    props = entity.to_cypher_properties()
-    return f"CREATE (:{label} {props})"
-
-
-def create_relationship_cypher(rel: BrickRelationship) -> str:
-    """Generate Cypher statement to create a relationship."""
-    props = ""
-    if rel.properties:
-        prop_strings = []
-        for k, v in rel.properties.items():
-            if isinstance(v, str):
-                prop_strings.append(f'{k}: "{v}"')
-            else:
-                prop_strings.append(f'{k}: {v}')
-        props = " {" + ", ".join(prop_strings) + "}"
+def create_indexes(client: FalkorDBClient) -> None:
+    """Create indexes for common queries."""
+    indexes = [
+        "CREATE INDEX ON :brick_Building(id)",
+        "CREATE INDEX ON :brick_Building(name)",
+        "CREATE INDEX ON :brick_Floor(id)",
+        "CREATE INDEX ON :brick_HVAC_Zone(id)",
+        "CREATE INDEX ON :brick_Air_Handling_Unit(id)",
+        "CREATE INDEX ON :brick_Electrical_Meter(id)",
+        "CREATE INDEX ON :brick_Temperature_Sensor(id)",
+        "CREATE INDEX ON :brick_Timeseries(id)",
+        "CREATE INDEX ON :brick_Timeseries(external_id)",
+    ]
     
-    return f"""
-    MATCH (a {{id: "{rel.from_id}"}}), (b {{id: "{rel.to_id}"}})
-    CREATE (a)-[:{rel.relation_type.value}{props}]->(b)
-    """
+    for index in indexes:
+        try:
+            client.execute(index)
+        except Exception:
+            pass  # Index may already exist
 
 
-def load_graph(
-    client: FalkorDBClient,
-    entities: List[BrickEntity],
-    relationships: List[BrickRelationship],
-    clear_first: bool = True
-) -> None:
-    """
-    Load all entities and relationships into FalkorDB.
+def load_graph(client: FalkorDBClient, clear_first: bool = True) -> None:
+    """Load the Brick ontology graph into FalkorDB."""
     
-    Args:
-        client: Connected FalkorDB client
-        entities: List of Brick entities to create
-        relationships: List of relationships to create
-        clear_first: Whether to clear existing data first
-    """
-    print("\n" + "=" * 60)
-    print("LOADING KNOWLEDGE GRAPH")
-    print("=" * 60)
+    print("\n" + "=" * 50)
+    print("LOADING BRICK ONTOLOGY GRAPH")
+    print("=" * 50)
     
     if clear_first:
         print("\n[*] Clearing existing graph...")
         client.delete_all()
     
-    # Create indexes
-    print("\n[*] Creating indexes...")
-    for index_query in create_index_queries():
+    print("[*] Creating indexes...")
+    create_indexes(client)
+    
+    print("[*] Generating Cypher statements...")
+    statements = generate_cypher_statements()
+    print(f"    Generated {len(statements)} statements")
+    
+    print("[*] Executing statements...")
+    success = 0
+    errors = 0
+    
+    for i, stmt in enumerate(statements):
         try:
-            client.execute(index_query)
+            client.execute(stmt)
+            success += 1
         except Exception as e:
-            # Index might already exist
-            pass
-    print("  [OK] Indexes created")
+            errors += 1
+            print(f"    [ERROR] Statement {i+1}: {e}")
     
-    # Create nodes
-    print(f"\n[*] Creating {len(entities)} nodes...")
-    node_count = 0
-    for entity in entities:
-        try:
-            cypher = create_node_cypher(entity)
-            client.execute(cypher)
-            node_count += 1
-        except Exception as e:
-            print(f"  [WARN] Failed to create {entity.id}: {e}")
+    print(f"\n[OK] Executed {success} statements")
+    if errors > 0:
+        print(f"[WARN] {errors} errors")
     
-    print(f"  [OK] Created {node_count} nodes")
-    
-    # Create relationships
-    print(f"\n[*] Creating {len(relationships)} relationships...")
-    rel_count = 0
-    for rel in relationships:
-        try:
-            cypher = create_relationship_cypher(rel)
-            client.execute(cypher)
-            rel_count += 1
-        except Exception as e:
-            print(f"  [WARN] Failed to create relationship {rel.from_id} -> {rel.to_id}: {e}")
-    
-    print(f"  [OK] Created {rel_count} relationships")
+    # Verify connectivity
+    print("\n[*] Verifying graph connectivity...")
+    verify_graph(client)
     
     # Print summary
-    print("\n" + "=" * 60)
-    print("LOADING COMPLETE")
-    print("=" * 60)
+    print("\n" + "=" * 50)
+    print("LOAD COMPLETE")
+    print("=" * 50)
     
-    try:
-        stats = client.get_statistics()
-        print(f"\n[STATS] Graph Statistics:")
-        print(f"   Total nodes: {stats['total_nodes']}")
-        print(f"   Total edges: {stats['total_edges']}")
-        
-        if stats['nodes_by_label']:
-            print(f"\n   Nodes by type:")
-            for label, count in stats['nodes_by_label'].items():
-                print(f"     {label}: {count}")
-    except Exception as e:
-        print(f"\n[WARN] Could not retrieve statistics: {e}")
-        print(f"   Graph loaded successfully with {node_count} nodes and {rel_count} relationships.")
+    summary = get_seed_summary()
+    print(f"\nRoot: {summary['root']}")
+    print(f"Expected nodes: ~{sum([summary['floors'], summary['zones'], summary['systems'], summary['equipment'], summary['meters'], summary['sensors'], summary['timeseries']]) + 1}")
+    
+    # Count actual nodes
+    result = client.query("MATCH (n) RETURN count(n) as count")
+    if result:
+        print(f"Actual nodes: {result[0]['count']}")
+    
+    result = client.query("MATCH ()-[r]->() RETURN count(r) as count")
+    if result:
+        print(f"Relationships: {result[0]['count']}")
+
+
+def verify_graph(client: FalkorDBClient) -> None:
+    """Verify the graph is properly connected."""
+    
+    # Check Building exists
+    result = client.query("MATCH (b:brick_Building) RETURN b.name as name")
+    if result:
+        print(f"    Root Building: {result[0]['name']}")
+    else:
+        print("    [ERROR] No Building found!")
+        return
+    
+    # Check all nodes are reachable from Building
+    result = client.query("""
+        MATCH (b:brick_Building {id: 'building_opera'})
+        MATCH (b)-[*1..5]-(connected)
+        RETURN count(DISTINCT connected) as reachable
+    """)
+    if result:
+        print(f"    Nodes reachable from Building: {result[0]['reachable']}")
+    
+    # Check traversal path exists
+    result = client.query("""
+        MATCH path = (b:brick_Building)-[:brick_hasPart]->
+                     (:brick_HVAC_System)-[:brick_hasMember]->
+                     (:brick_Air_Handling_Unit)-[:brick_hasPoint]->
+                     (:brick_Temperature_Sensor)-[:brick_hasTimeseries]->
+                     (:brick_Timeseries)
+        RETURN count(path) as paths
+    """)
+    if result and result[0]['paths'] > 0:
+        print(f"    Valid traversal paths: {result[0]['paths']}")
+    else:
+        print("    [WARN] No complete traversal path found")
 
 
 def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Load Brick-based knowledge graph into FalkorDB"
-    )
-    parser.add_argument(
-        "--clear",
-        action="store_true",
-        help="Clear existing graph before loading"
-    )
-    parser.add_argument(
-        "--host",
-        default="localhost",
-        help="FalkorDB host (default: localhost)"
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=6379,
-        help="FalkorDB port (default: 6379)"
-    )
-    parser.add_argument(
-        "--graph",
-        default="energy_graph",
-        help="Graph name (default: energy_graph)"
-    )
+    parser = argparse.ArgumentParser(description="Load Brick ontology graph into FalkorDB")
+    parser.add_argument("--clear", action="store_true", help="Clear existing graph")
+    parser.add_argument("--host", default="localhost", help="FalkorDB host")
+    parser.add_argument("--port", type=int, default=6379, help="FalkorDB port")
+    parser.add_argument("--graph", default="energy_graph", help="Graph name")
     
     args = parser.parse_args()
     
-    # Create client
     config = FalkorConfig(
         host=args.host,
         port=args.port,
@@ -167,20 +146,12 @@ def main():
     
     try:
         client.connect()
-        
-        # Get seed data
-        print("\n[*] Generating seed data...")
-        entities, relationships = get_all_seed_data()
-        print(f"   Generated {len(entities)} entities")
-        print(f"   Generated {len(relationships)} relationships")
-        
-        # Load into FalkorDB
-        load_graph(client, entities, relationships, clear_first=args.clear)
+        load_graph(client, clear_first=args.clear)
         
     except Exception as e:
         print(f"\n[ERROR] {e}")
         print("\nMake sure FalkorDB is running:")
-        print("  docker run -p 6379:6379 -it --rm falkordb/falkordb")
+        print("  docker start falkordb")
         sys.exit(1)
     
     finally:

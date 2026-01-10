@@ -1,104 +1,111 @@
-# FalkorDB Energy Knowledge Graph
+# FalkorDB Brick Ontology Knowledge Graph
 
-> Brick Schema-basert kunnskapsgraf for energioppfølging i norske næringsbygg
+> Strict Brick Schema implementation for semantic query planning
 
-## Forutsetninger
+## Brick Ontology
 
-- **Docker Desktop** må være installert og kjøre
-- Python 3.10+
+All classes and relations follow [Brick Schema](https://ontology.brickschema.org/):
+
+- Labels prefixed with `brick_` (e.g., `brick_Building`)
+- Relations prefixed with `brick_` (e.g., `brick_hasPart`)
+
+## Graph Structure
+
+```
+brick_Building (ROOT)
+├── brick_hasPart → brick_Floor
+│   └── brick_hasPart → brick_HVAC_Zone
+│       └── brick_hasPoint → brick_Temperature_Sensor
+│           └── brick_hasTimeseries → brick_Timeseries
+├── brick_hasPart → brick_HVAC_System
+│   └── brick_hasMember → brick_Air_Handling_Unit
+│       ├── brick_hasPoint → brick_Temperature_Sensor
+│       │   └── brick_hasTimeseries → brick_Timeseries
+│       └── brick_feeds → brick_HVAC_Zone
+└── brick_isMeteredBy → brick_Electrical_Meter
+    └── brick_hasPoint → brick_Power_Sensor
+        └── brick_hasTimeseries → brick_Timeseries
+```
 
 ---
 
-## 🐳 Starte FalkorDB
-
-### 1. Start databasen
+## Start FalkorDB
 
 ```bash
+# Database
 docker run -d --name falkordb -p 6379:6379 falkordb/falkordb
+
+# Browser (http://localhost:3000)
+docker run -d --name falkordb-browser -p 3000:3000 \
+  -e FALKORDB_URL=host.docker.internal:6379 falkordb/falkordb-browser
 ```
 
-### 2. Start web-grensesnittet
+## Load Graph
 
 ```bash
-docker run -d --name falkordb-browser -p 3000:3000 -e FALKORDB_URL=host.docker.internal:6379 falkordb/falkordb-browser
-```
-
-### 3. Åpne nettleseren
-
-Gå til **http://localhost:3000** og logg inn med:
-
-| Felt | Verdi |
-|------|-------|
-| Host | `host.docker.internal` |
-| Port | `6379` |
-
----
-
-## 📥 Laste inn grafen
-
-```bash
-cd FalkorDB
 pip install -r requirements.txt
 python load_graph.py --clear
 ```
 
 ---
 
-## 🔍 Eksempel-spørringer (Cypher)
+## Cypher Queries
 
-Kjør disse i FalkorDB Browser:
+### Traversal: Building → System → Equipment → Sensor → Timeseries
 
 ```cypher
--- Alle bygninger
-MATCH (b:Building) RETURN b.name, b.area_sqm, b.energy_class
+MATCH (b:brick_Building)-[:brick_hasPart]->(sys:brick_HVAC_System)
+      -[:brick_hasMember]->(eq:brick_Air_Handling_Unit)
+      -[:brick_hasPoint]->(s:brick_Temperature_Sensor)
+      -[:brick_hasTimeseries]->(ts:brick_Timeseries)
+RETURN b.name, eq.name, s.name, ts.external_id
+```
 
--- Målere for Operahuset
-MATCH (m)-[:meters]->(b:Building)
-WHERE b.name CONTAINS "Opera"
-RETURN m.name, m.meter_type
+### All sensors in a zone
 
--- Utstyr med sensorer
-MATCH (s:Power_Sensor)-[:isPointOf]->(e)
-RETURN e.name, s.current_value as power_kw
+```cypher
+MATCH (z:brick_HVAC_Zone)-[:brick_hasPoint]->(s)
+RETURN z.name, s.name, s.unit
+```
 
--- Hele grafen (maks 100 noder)
-MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 100
+### Equipment feeding zones
+
+```cypher
+MATCH (ahu:brick_Air_Handling_Unit)-[:brick_feeds]->(z:brick_HVAC_Zone)
+RETURN ahu.name, collect(z.name) as zones
+```
+
+### Meters for building
+
+```cypher
+MATCH (b:brick_Building)-[:brick_isMeteredBy]->(m)
+RETURN b.name, m.name, labels(m)[0] as type
 ```
 
 ---
 
-## ⏹️ Docker-kommandoer
+## Files
 
-| Kommando | Beskrivelse |
-|----------|-------------|
-| `docker start falkordb falkordb-browser` | Start serverne |
-| `docker stop falkordb falkordb-browser` | Stopp serverne |
-| `docker rm falkordb falkordb-browser` | Slett containerne |
+| File | Description |
+|------|-------------|
+| `schema.py` | Brick classes and relations |
+| `seed_data.py` | Cypher generation for seeding |
+| `load_graph.py` | Load graph into FalkorDB |
+| `falkor_client.py` | Database client |
 
 ---
 
-## 📁 Filer
+## Docker Commands
 
-```
-FalkorDB/
-├── schema.py         # Brick-skjema
-├── seed_data.py      # Bygningsdata
-├── falkor_client.py  # Database-tilkobling
-├── load_graph.py     # Last inn grafen
-└── requirements.txt  # Avhengigheter
+```bash
+docker start falkordb falkordb-browser   # Start
+docker stop falkordb falkordb-browser    # Stop
+docker logs falkordb                     # Logs
 ```
 
----
+## Browser Login
 
-## 🏢 Bygninger i grafen
-
-| Bygning | Sted | Areal |
-|---------|------|-------|
-| Operahuset | Oslo | 38 500 m² |
-| Deichmanske Bibliotek | Oslo | 13 500 m² |
-| Barcode B13 | Oslo | 22 000 m² |
-| Powerhouse Brattørkaia | Trondheim | 8 800 m² |
-
----
-
-*IDATT2901 Bachelor - Piscada AI Energy Assistant*
+| Field | Value |
+|-------|-------|
+| Host | `host.docker.internal` |
+| Port | `6379` |
