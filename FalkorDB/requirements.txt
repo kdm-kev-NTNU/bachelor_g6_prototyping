@@ -1,0 +1,14 @@
+# FalkorDB Knowledge Graph for Energy Management
+# Based on Brick Schema ontology
+
+# FalkorDB Python client
+falkordb>=1.0.0
+
+# GraphQL integration
+strawberry-graphql>=0.200.0
+gql>=3.4.0
+aiohttp>=3.9.0
+
+# Utilities
+python-dotenv>=1.0.0
+rich>=13.0.0  # Pretty console output
