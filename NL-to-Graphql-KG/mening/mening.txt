@@ -1,0 +1,22 @@
+for statisk - trenger å få teste ut, å gi LLM-en mer valgfrihet, for 
+ontologiene er ikke faste, og Apollo MCP integrere allerede 
+med deres eksisterende tekvalg + gjør det lettere med utforskning. 
+
+
+Legg til
+
+MCP-server som kun:
+
+tar imot GraphQL
+
+validerer
+
+kjører
+
+Guardrails:
+
+depth-limit
+
+query-cost
+
+allow-list på root-queries

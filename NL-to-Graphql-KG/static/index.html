@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="no">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NL-to-KG | Knowledge Graph Query</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0a0e17;
+            --bg-card: #111827;
+            --bg-input: #1a2332;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-amber: #f59e0b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #1e293b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            background-image:
+                radial-gradient(ellipse at top, rgba(6, 182, 212, 0.1) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom right, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-top: 2rem;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            font-weight: 300;
+            margin-top: 0.5rem;
+        }
+
+        .pipeline-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 0.5rem 1rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .pipeline-badge span {
+            color: var(--accent-cyan);
+        }
+
+        .query-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        #query-input {
+            flex: 1;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            font-size: 1rem;
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        #query-input:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.15);
+        }
+
+        #query-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            border: none;
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.2s;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(6, 182, 212, 0.3);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .examples {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .example-btn {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .example-btn:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            background: rgba(6, 182, 212, 0.1);
+        }
+
+        .results-section {
+            display: none;
+        }
+
+        .results-section.visible {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .result-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .result-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+        }
+
+        .icon-response {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .icon-graphql {
+            background: rgba(139, 92, 246, 0.2);
+            color: var(--accent-purple);
+        }
+
+        .icon-cypher {
+            background: rgba(6, 182, 212, 0.2);
+            color: var(--accent-cyan);
+        }
+
+        .icon-data {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-amber);
+        }
+
+        .result-content {
+            padding: 1.25rem;
+        }
+
+        .response-text {
+            font-size: 1rem;
+            line-height: 1.7;
+            white-space: pre-wrap;
+        }
+
+        .code-block {
+            background: var(--bg-dark);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            color: var(--text-secondary);
+        }
+
+        .toggle-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.4rem 0.75rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            transition: all 0.15s;
+        }
+
+        .toggle-btn:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        .collapsible {
+            display: none;
+        }
+
+        .collapsible.open {
+            display: block;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 12px;
+            padding: 1rem;
+            color: #fca5a5;
+        }
+
+        .lang-toggle {
+            display: flex;
+            gap: 0.25rem;
+            background: var(--bg-input);
+            border-radius: 8px;
+            padding: 0.25rem;
+        }
+
+        .lang-btn {
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 0.4rem 0.75rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            transition: all 0.15s;
+        }
+
+        .lang-btn.active {
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
+            font-weight: 500;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 0.8rem;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.error {
+            background: #ef4444;
+            animation: none;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">🏢</div>
+                <h1>NL-to-KG</h1>
+            </div>
+            <p class="subtitle">Spør kunnskapsgrafen med naturlig språk</p>
+            <div class="pipeline-badge">
+                <span>NL</span> → Intent → <span>GraphQL</span> → Cypher → <span>FalkorDB</span>
+            </div>
+        </header>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="status-dot"></div>
+                <span id="status-text">Kobler til...</span>
+            </div>
+            <div class="lang-toggle">
+                <button class="lang-btn active" data-lang="no">Norsk</button>
+                <button class="lang-btn" data-lang="en">English</button>
+            </div>
+        </div>
+
+        <section class="query-section">
+            <div class="input-wrapper">
+                <input type="text" id="query-input"
+                    placeholder="Skriv spørringen din her... f.eks. 'Vis alle sensorer i bygget'" autocomplete="off">
+                <button class="submit-btn" id="submit-btn">Spør</button>
+            </div>
+            <div class="examples">
+                <button class="example-btn">Vis alle sensorer</button>
+                <button class="example-btn">Bygningens adresse</button>
+                <button class="example-btn">Soner i bygget</button>
+                <button class="example-btn">Hvilke AHU finnes?</button>
+                <button class="example-btn">Tidsserie-IDer</button>
+                <button class="example-btn">Antall etasjer</button>
+            </div>
+        </section>
+
+        <section class="results-section" id="results-section">
+            <!-- Results will be inserted here -->
+        </section>
+
+        <footer>
+            Brick Ontology Knowledge Graph • FalkorDB
+        </footer>
+    </div>
+
+    <script>
+        const API_URL = window.location.origin;
+        let currentLang = 'no';
+
+        // DOM Elements
+        const queryInput = document.getElementById('query-input');
+        const submitBtn = document.getElementById('submit-btn');
+        const resultsSection = document.getElementById('results-section');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const exampleBtns = document.querySelectorAll('.example-btn');
+        const langBtns = document.querySelectorAll('.lang-btn');
+
+        // Check health on load
+        async function checkHealth() {
+            try {
+                const res = await fetch(`${API_URL}/health`);
+                const data = await res.json();
+                if (data.database_connected) {
+                    statusDot.classList.remove('error');
+                    statusText.textContent = `Koblet til ${data.graph_name}`;
+                } else {
+                    statusDot.classList.add('error');
+                    statusText.textContent = 'Database ikke tilgjengelig';
+                }
+            } catch (e) {
+                statusDot.classList.add('error');
+                statusText.textContent = 'Kan ikke koble til API';
+            }
+        }
+
+        // Submit query
+        async function submitQuery() {
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '...';
+
+            resultsSection.innerHTML = `
+                <div class="result-card">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <span>Behandler spørring...</span>
+                    </div>
+                </div>
+            `;
+            resultsSection.classList.add('visible');
+
+            try {
+                const res = await fetch(`${API_URL}/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, language: currentLang })
+                });
+                const data = await res.json();
+                displayResults(data);
+            } catch (e) {
+                resultsSection.innerHTML = `
+                    <div class="error">
+                        <strong>Feil:</strong> Kunne ikke utføre spørringen. Sjekk at API-serveren kjører.
+                    </div>
+                `;
+            }
+
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Spør';
+        }
+
+        // Display results
+        function displayResults(data) {
+            let html = '';
+
+            // Response card
+            html += `
+                <div class="result-card">
+                    <div class="result-header">
+                        <div class="result-title">
+                            <div class="result-icon icon-response">💬</div>
+                            Svar
+                        </div>
+                    </div>
+                    <div class="result-content">
+                        <div class="response-text">${escapeHtml(data.response)}</div>
+                    </div>
+                </div>
+            `;
+
+            // Pipeline details
+            if (data.graphql || data.cypher) {
+                html += `
+                    <div class="result-card">
+                        <div class="result-header">
+                            <div class="result-title">
+                                <div class="result-icon icon-graphql">⚡</div>
+                                Pipeline Detaljer
+                            </div>
+                            <button class="toggle-btn" onclick="togglePipeline()">Vis/Skjul</button>
+                        </div>
+                        <div class="result-content collapsible" id="pipeline-details">
+                `;
+
+                if (data.intent) {
+                    html += `
+                        <p style="color: var(--text-muted); margin-bottom: 0.5rem; font-size: 0.85rem;">
+                            <strong>Intent:</strong> ${data.intent.intent} 
+                            ${data.intent.entity ? `| <strong>Entity:</strong> ${data.intent.entity}` : ''}
+                            | <strong>Confidence:</strong> ${Math.round((data.intent.confidence || 0) * 100)}%
+                        </p>
+                    `;
+                }
+
+                if (data.graphql) {
+                    html += `
+                        <p style="color: var(--accent-purple); margin: 1rem 0 0.5rem; font-size: 0.85rem; font-weight: 500;">GraphQL Query:</p>
+                        <div class="code-block">${escapeHtml(data.graphql)}</div>
+                    `;
+                }
+
+                if (data.cypher) {
+                    html += `
+                        <p style="color: var(--accent-cyan); margin: 1rem 0 0.5rem; font-size: 0.85rem; font-weight: 500;">Cypher Query:</p>
+                        <div class="code-block">${escapeHtml(data.cypher)}</div>
+                    `;
+                }
+
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Raw results
+            if (data.results && data.results.length > 0) {
+                html += `
+                    <div class="result-card">
+                        <div class="result-header">
+                            <div class="result-title">
+                                <div class="result-icon icon-data">📊</div>
+                                Rådata (${data.results.length} resultater)
+                            </div>
+                            <button class="toggle-btn" onclick="toggleRawData()">Vis/Skjul</button>
+                        </div>
+                        <div class="result-content collapsible" id="raw-data">
+                            <div class="code-block">${escapeHtml(JSON.stringify(data.results, null, 2))}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            resultsSection.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function togglePipeline() {
+            document.getElementById('pipeline-details').classList.toggle('open');
+        }
+
+        function toggleRawData() {
+            document.getElementById('raw-data').classList.toggle('open');
+        }
+
+        // Event listeners
+        submitBtn.addEventListener('click', submitQuery);
+
+        queryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') submitQuery();
+        });
+
+        exampleBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                queryInput.value = btn.textContent;
+                submitQuery();
+            });
+        });
+
+        langBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                langBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentLang = btn.dataset.lang;
+
+                // Update placeholder
+                queryInput.placeholder = currentLang === 'no'
+                    ? "Skriv spørringen din her... f.eks. 'Vis alle sensorer i bygget'"
+                    : "Type your query here... e.g. 'Show all sensors in the building'";
+            });
+        });
+
+        // Initialize
+        checkHealth();
+    </script>
+</body>
+
+</html>

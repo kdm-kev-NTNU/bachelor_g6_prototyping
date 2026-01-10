@@ -1,0 +1,21 @@
+# NL-to-KG Pipeline Requirements
+# ================================
+# Pipeline: NL → Intent → GraphQL → Cypher → FalkorDB
+
+# FalkorDB client
+falkordb>=1.0.0
+
+# GraphQL (for schema definitions)
+strawberry-graphql>=0.200.0
+
+# LLM integration (optional, for better intent extraction)
+openai>=1.0.0
+
+# Web server & API
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+aiofiles>=23.0.0  # For static file serving
+
+# Utilities
+python-dotenv>=1.0.0

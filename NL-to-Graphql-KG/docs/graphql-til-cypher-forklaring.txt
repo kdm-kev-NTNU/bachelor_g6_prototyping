@@ -1,0 +1,318 @@
+================================================================================
+                    GRAPHQL TIL CYPHER - FORKLARING
+================================================================================
+
+Dette dokumentet forklarer hvordan NL-to-KG pipelinen oversetter GraphQL 
+spørringer til Cypher for FalkorDB.
+
+
+================================================================================
+1. OVERSIKT - HELE PIPELINEN
+================================================================================
+
+    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+    │ "Vis alle   │     │   Intent    │     │   GraphQL   │     │   Cypher    │
+    │  sensorer"  │ ──► │  Extractor  │ ──► │  Generator  │ ──► │  Resolver   │
+    └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+                                                                       │
+                                                                       ▼
+                                                               ┌─────────────┐
+                                                               │  FalkorDB   │
+                                                               │   (Graf)    │
+                                                               └─────────────┘
+
+GraphQL fungerer som et MELLOMLAG mellom naturlig språk og Cypher.
+
+HVORFOR GraphQL mellom NL og Cypher?
+- GraphQL gir en strukturert, type-sikker spørring
+- Lettere å validere enn å generere Cypher direkte
+- Standard query-språk som er lett å forstå
+- Kan gjenbrukes med andre databaser senere
+
+
+================================================================================
+2. GRAPHQL TIL CYPHER - TRINN FOR TRINN
+================================================================================
+
+La oss følge et eksempel gjennom hele prosessen:
+
+BRUKER SKRIVER: "Vis alle temperatursensorer"
+
+------------------------------------------------------------------------------
+STEG 1: Intent Extraction (intent_extractor.py)
+------------------------------------------------------------------------------
+
+Input:  "Vis alle temperatursensorer"
+
+Output: {
+    intent_type: "query_list",
+    entity_class: "brick_Temperature_Sensor",
+    parameters: {},
+    confidence: 0.85
+}
+
+Hvordan: 
+- "Vis alle" matcher mønsteret for QUERY_LIST
+- "temperatursensor" matcher synonymet for TEMPERATURE_SENSOR i ontologien
+
+
+------------------------------------------------------------------------------
+STEG 2: GraphQL Generation (graphql_generator.py)
+------------------------------------------------------------------------------
+
+Input:  Intent-objektet fra steg 1
+
+Output: 
+    query ListSensors {
+      sensors(sensorType: "Temperature_Sensor") {
+        id
+        name
+        unit
+        sensorType
+      }
+    }
+
+Hvordan:
+1. Intent type (query_list) → bruker "sensors" query (liste-operasjon)
+2. Entity class (Temperature_Sensor) → legger til filter: sensorType
+3. Velger standard felter for Sensor-typen: id, name, unit, sensorType
+
+
+------------------------------------------------------------------------------
+STEG 3: Cypher Resolution (graphql_to_cypher.py)
+------------------------------------------------------------------------------
+
+Input:  GraphQL-spørringen fra steg 2
+
+Output:
+    MATCH (s:brick_Temperature_Sensor)
+    RETURN s {.id, .name, .unit, sensorType: labels(s)[0]}
+
+Hvordan:
+1. Parser GraphQL for å finne operasjonen: "sensors"
+2. Ser at det er et filter: sensorType = "Temperature_Sensor"
+3. Mapper til Cypher MATCH med riktig label
+4. Bygger RETURN-klausulen basert på requested fields
+
+
+================================================================================
+3. MAPPING-REGLER: GRAPHQL → CYPHER
+================================================================================
+
+Resolver-klassen (GraphQLToCypherResolver) har mapping-regler:
+
+------------------------------------------------------------------------------
+A) QUERY TIL MATCH PATTERN
+------------------------------------------------------------------------------
+
+GraphQL Query          →    Cypher Pattern
+-----------------------------------------------------------------
+building(id: "x")      →    MATCH (b:brick_Building {id: 'x'})
+buildings              →    MATCH (b:brick_Building)
+sensors                →    MATCH (s) WHERE s:brick_*_Sensor
+floors(buildingId: x)  →    MATCH (b {id: x})-[:brick_hasPart]->(f:brick_Floor)
+
+
+------------------------------------------------------------------------------
+B) TYPE MAPPING
+------------------------------------------------------------------------------
+
+GraphQL Type     →    Cypher Label
+-----------------------------------------------------------------
+Building         →    :brick_Building
+Floor            →    :brick_Floor
+HVACZone         →    :brick_HVAC_Zone
+Equipment        →    :brick_Air_Handling_Unit (eller andre)
+Sensor           →    :brick_Temperature_Sensor (eller andre)
+Meter            →    :brick_Electrical_Meter (eller andre)
+Timeseries       →    :brick_Timeseries
+
+
+------------------------------------------------------------------------------
+C) FILTER MAPPING
+------------------------------------------------------------------------------
+
+GraphQL Filter              →    Cypher WHERE/Label
+-----------------------------------------------------------------
+sensorType: "Temperature"   →    s:brick_Temperature_Sensor
+equipmentType: "AHU"        →    eq:brick_Air_Handling_Unit
+systemType: "HVAC"          →    sys:brick_HVAC_System
+buildingId: "x"             →    (b {id: 'x'})-[...]->
+
+
+------------------------------------------------------------------------------
+D) NESTED FIELDS → TRAVERSALS
+------------------------------------------------------------------------------
+
+GraphQL                          →    Cypher
+-----------------------------------------------------------------
+building { floors { ... } }      →    (b)-[:brick_hasPart]->(f:brick_Floor)
+equipment { sensors { ... } }    →    (eq)-[:brick_hasPoint]->(s)
+sensor { timeseries { ... } }    →    (s)-[:brick_hasTimeseries]->(ts)
+
+
+================================================================================
+4. KONKRETE EKSEMPLER
+================================================================================
+
+------------------------------------------------------------------------------
+EKSEMPEL 1: Hent bygning med detaljer
+------------------------------------------------------------------------------
+
+GraphQL:
+    query {
+      building(name: "Opera") {
+        id
+        name
+        address
+        floors { id name level }
+        systems { id name }
+      }
+    }
+
+Cypher:
+    MATCH (b:brick_Building)
+    WHERE b.name CONTAINS 'Opera'
+    OPTIONAL MATCH (b)-[:brick_hasPart]->(f:brick_Floor)
+    OPTIONAL MATCH (b)-[:brick_hasPart]->(sys)
+    WHERE NOT sys:brick_Floor
+    RETURN b {
+        .id, .name, .address,
+        floors: collect(DISTINCT f {.id, .name, .level}),
+        systems: collect(DISTINCT sys {.id, .name, type: labels(sys)[0]})
+    }
+
+
+------------------------------------------------------------------------------
+EKSEMPEL 2: Sensorer i en sone
+------------------------------------------------------------------------------
+
+GraphQL:
+    query {
+      sensors(zoneId: "zone_foyer") {
+        id
+        name
+        unit
+        timeseries { externalId }
+      }
+    }
+
+Cypher:
+    MATCH (z:brick_HVAC_Zone {id: 'zone_foyer'})-[:brick_hasPoint]->(s)
+    OPTIONAL MATCH (s)-[:brick_hasTimeseries]->(ts)
+    RETURN s {
+        .id, .name, .unit, sensorType: labels(s)[0],
+        timeseries: ts {.id, .external_id, .resolution}
+    }
+
+
+------------------------------------------------------------------------------
+EKSEMPEL 3: Tell sensorer
+------------------------------------------------------------------------------
+
+GraphQL:
+    query {
+      sensorCount(sensorType: "Temperature_Sensor")
+    }
+
+Cypher:
+    MATCH (s:brick_Temperature_Sensor) 
+    RETURN count(s) as count
+
+
+================================================================================
+5. KODE-STRUKTUR
+================================================================================
+
+Fil: graphql_to_cypher.py
+
+class GraphQLToCypherResolver:
+    
+    def __init__(self):
+        # Type-mappinger
+        self.type_mapping = { ... }
+        self.sensor_types = { ... }
+        self.equipment_types = { ... }
+    
+    def resolve(self, graphql_query, variables):
+        # 1. Parse GraphQL-strengen
+        # 2. Finn hvilken query det er (building, sensors, etc.)
+        # 3. Kall riktig resolver-metode
+        
+        if "building" in query_lower:
+            return self._resolve_building(variables)
+        elif "sensors" in query_lower:
+            return self._resolve_sensors(variables)
+        # ... osv
+    
+    def _resolve_sensors(self, variables):
+        # Bygg Cypher basert på filtre
+        zone_id = variables.get("zoneId", "")
+        sensor_type = variables.get("sensorType", "")
+        
+        # Map sensor type til Brick label
+        if sensor_type:
+            label = self.sensor_types.get(sensor_type)
+        
+        # Bygg MATCH pattern basert på filtre
+        # Returner CypherQuery objekt
+
+
+================================================================================
+6. BRICK ONTOLOGY - GRAF-STRUKTUREN
+================================================================================
+
+FalkorDB inneholder en graf med Brick Schema struktur:
+
+    brick_Building (ROOT)
+    ├── [:brick_hasPart] → brick_Floor
+    │   └── [:brick_hasPart] → brick_HVAC_Zone
+    │       └── [:brick_hasPoint] → brick_Temperature_Sensor
+    │           └── [:brick_hasTimeseries] → brick_Timeseries
+    │
+    ├── [:brick_hasPart] → brick_HVAC_System
+    │   └── [:brick_hasMember] → brick_Air_Handling_Unit
+    │       ├── [:brick_hasPoint] → brick_Temperature_Sensor
+    │       └── [:brick_feeds] → brick_HVAC_Zone
+    │
+    └── [:brick_isMeteredBy] → brick_Electrical_Meter
+        └── [:brick_hasPoint] → brick_Power_Sensor
+
+
+Cypher traverserer denne strukturen med MATCH patterns:
+
+    MATCH (b:brick_Building)-[:brick_hasPart]->(sys:brick_HVAC_System)
+          -[:brick_hasMember]->(ahu:brick_Air_Handling_Unit)
+          -[:brick_hasPoint]->(s:brick_Temperature_Sensor)
+    RETURN b.name, ahu.name, s.name
+
+
+================================================================================
+7. OPPSUMMERING
+================================================================================
+
+GraphQL → Cypher oversettelsen gjør følgende:
+
+1. PARSER GraphQL-spørringen for å forstå:
+   - Hvilken operasjon (query/mutation)
+   - Hvilken rot-type (building, sensors, etc.)
+   - Hvilke filtre (id, name, type, etc.)
+   - Hvilke felter som ønskes
+
+2. MAPPER GraphQL-konsepter til Cypher:
+   - Types → Node labels (:brick_Building)
+   - Filters → WHERE-klausuler eller spesifikke labels
+   - Nested fields → Relationship traversals
+   - Return fields → RETURN-projeksjon
+
+3. GENERERER optimal Cypher:
+   - Bruker OPTIONAL MATCH for nullable relasjoner
+   - Samler nested data med collect()
+   - Returnerer data i strukturert format
+
+Dette gir en ren separasjon mellom:
+- NL-forståelse (Intent Extraction)
+- Strukturert query-språk (GraphQL)
+- Database-spesifikk query (Cypher)
+
+================================================================================
