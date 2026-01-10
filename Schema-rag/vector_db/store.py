@@ -1,4 +1,10 @@
 """Store GraphQL schema information in Chroma vector database."""
+import sys
+from pathlib import Path
+
+# Legg til prosjektets rot-mappe i Python-stien
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from vector_db.setup import get_collection
 from openai import OpenAI
 import os

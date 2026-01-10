@@ -1,4 +1,10 @@
 """Seed the database with sample data."""
+import sys
+from pathlib import Path
+
+# Legg til prosjektets rot-mappe i Python-stien
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import asyncio
 from sqlalchemy import text
 from database.db import engine, Base
