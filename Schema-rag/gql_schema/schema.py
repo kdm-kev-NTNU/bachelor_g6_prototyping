@@ -183,4 +183,3 @@ class Mutation:
 
 # Create the schema
 schema = strawberry.Schema(query=Query, mutation=Mutation)
-

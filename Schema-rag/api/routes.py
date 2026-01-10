@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from rag.generator import generate_graphql_query, validate_graphql_query
-from graphql.schema import schema
+from gql_schema.schema import schema
 from strawberry.fastapi import GraphQLRouter
 
 
