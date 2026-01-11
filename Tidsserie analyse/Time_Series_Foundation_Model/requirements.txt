@@ -1,0 +1,21 @@
+# TimesFM Energy Forecasting App - Avhengigheter
+
+# Google TimesFM - Time Series Foundation Model
+timesfm>=1.2.0
+
+# Visualisering
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# LLM integrasjon
+openai>=1.0.0
+
+# Databehandling
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Miljøvariabler
+python-dotenv>=1.0.0
+
+# Ekstra utilities
+scipy>=1.10.0

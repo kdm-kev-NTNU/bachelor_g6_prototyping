@@ -1,0 +1,48 @@
+spørsmålstyper å besvare: 
+
+ 
+
+4. Scenario- og konsekvensspørsmål (hva skjer hvis?) 
+
+Utforsker mulige konsekvenser av valg. 
+
+Formål: Beslutningsstøtte 
+
+Datagrunnlag: Historikk og enkel prediktiv modell 
+
+Analyse: Hva-hvis-simulering 
+
+LLM-rolle: Forklare retning, effekt og usikkerhet 
+
+Eksempler: 
+
+«Hva skjer hvis vi reduserer ventilasjonstiden?» 
+
+«Hva kan bli konsekvensen av å senke temperaturen?» 
+
+«Hvordan kan dette påvirke energimerket?» 
+
+ 
+
+5. Preskriptive spørsmål (hva bør vi gjøre?) 
+
+Foreslår tiltak. 
+
+Formål: Gi råd 
+
+Datagrunnlag: Resultater fra tidligere analyser 
+
+Analyse: Enkle regler og heuristikker 
+
+LLM-rolle: Formidle anbefalinger med forbehold 
+
+Eksempler: 
+
+«Hva kan vi gjøre for å redusere energiforbruket?» 
+
+«Hvilke tiltak gir størst effekt?» 
+
+
+Målet er å se hvordan Foundation TimeSeries modeller kan bli brukt som støtte i å forklare konsekvensene av en handling. tilen 
+bruker. 
+
