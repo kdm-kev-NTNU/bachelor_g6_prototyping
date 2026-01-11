@@ -1,10 +1,13 @@
 {
     "mcpServers": {
-        "energy-2": {
-            "command": "npx",
+        "energy-apollo": {
+            "command": "C:\\Windows\\System32\\cmd.exe",
             "args": [
+                "/c",
+                "npx",
+                "-y",
                 "mcp-remote",
-                "http://127.0.0.1:5050/mcp"
+                "http://127.0.0.1:8000/mcp"
             ]
         }
     }

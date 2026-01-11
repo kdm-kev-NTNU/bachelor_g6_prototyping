@@ -1,26 +1,104 @@
-# To learn more about how to write a GraphQL schema: 🔗 https://graphql.com/learn/schema/
+# Energy Data Schema - Brick Ontology
+# Connected to FalkorDB knowledge graph
 
-# For a guided tutorial covering TypeScript and Apollo Server: 🔗 https://www.apollographql.com/tutorials/intro-typescript
-
-
-type Product {
+type Building @key(fields: "id") {
   id: ID!
   name: String!
-  description: String!
+  description: String
+  address: String
+  areaSqm: Float
+  yearBuilt: Int
+  energyClass: String
+  floors: [Floor!]!
+  systems: [System!]!
+  meters: [Meter!]!
 }
 
-# The Query type defines the entry points to our data: what users can request.
-# Check out the src/resolvers/Query.ts file to view the corresponding resolver functions for the fields in this type.
-type Query {
-  product(id: ID!): Product
-  products: [Product!]!
-}
-
-type Mutation {
-  createProduct(input: CreateProductInput!): Product
-}
-
-input CreateProductInput {
+type Floor {
+  id: ID!
   name: String!
-  description: String!
+  level: Int
+  zones: [HVACZone!]!
+}
+
+type HVACZone {
+  id: ID!
+  name: String!
+  sensors: [Sensor!]!
+  fedBy: [Equipment!]!
+}
+
+type System {
+  id: ID!
+  name: String!
+  systemType: String!
+  equipment: [Equipment!]!
+}
+
+type Equipment {
+  id: ID!
+  name: String!
+  equipmentType: String!
+  manufacturer: String
+  model: String
+  capacity: Float
+  capacityUnit: String
+  sensors: [Sensor!]!
+}
+
+type Meter {
+  id: ID!
+  name: String!
+  meterType: String!
+  unit: String
+  sensors: [Sensor!]!
+}
+
+type Sensor {
+  id: ID!
+  name: String!
+  unit: String
+  sensorType: String!
+  timeseries: Timeseries
+}
+
+type Timeseries {
+  id: ID!
+  externalId: String!
+  resolution: String
+}
+
+type Query {
+  "Get a building by ID or name"
+  building(id: ID, name: String): Building
+  
+  "Get all buildings"
+  buildings: [Building!]!
+  
+  "Get floors, optionally filtered by building"
+  floors(buildingId: ID): [Floor!]!
+  
+  "Get HVAC zones"
+  zones(floorId: ID, buildingId: ID): [HVACZone!]!
+  
+  "Get systems (HVAC, Electrical, Lighting)"
+  systems(buildingId: ID, systemType: String): [System!]!
+  
+  "Get equipment (AHU, Chiller, Pump, etc.)"
+  equipment(systemId: ID, equipmentType: String): [Equipment!]!
+  
+  "Get sensors with optional filters"
+  sensors(zoneId: ID, equipmentId: ID, sensorType: String): [Sensor!]!
+  
+  "Get meters for a building"
+  meters(buildingId: ID): [Meter!]!
+  
+  "Get timeseries references"
+  timeseries(sensorId: ID): [Timeseries!]!
+  
+  "Count sensors by type"
+  sensorCount(sensorType: String): Int!
+  
+  "Count equipment by type"
+  equipmentCount(equipmentType: String): Int!
 }
