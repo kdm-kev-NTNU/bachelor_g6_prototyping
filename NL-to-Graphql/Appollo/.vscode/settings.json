@@ -1,0 +1,209 @@
+{
+  // ==========================================================================
+  // VS CODE SETTINGS FOR APOLLO MCP SERVER DEVELOPMENT
+  // ==========================================================================
+  //
+  // This file configures VS Code to provide excellent GraphQL development
+  // experience when creating MCP tools. It enables syntax highlighting,
+  // auto-completion, schema validation, and more for GraphQL files.
+
+  // ==========================================================================
+  // GRAPHQL LANGUAGE SUPPORT
+  // ==========================================================================
+
+  // Associate files with their appropriate languages
+  "files.associations": {
+    "*.graphql": "graphql",
+    "*.gql": "graphql",
+    "mcp.*.yaml": "yaml",
+    ".apollo/*.yaml": "yaml",
+    ".apollo/*.yml": "yaml",
+    "mcp.Dockerfile": "dockerfile",
+    "*.mcp.Dockerfile": "dockerfile"
+  },
+
+  // GraphQL-specific editor settings
+  "[graphql]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.autoIndent": "full",
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.wordWrap": "bounded",
+    "editor.wordWrapColumn": 100,
+
+    // Enable semantic highlighting for GraphQL
+    "editor.semanticHighlighting.enabled": true,
+
+    // Show suggestions while typing
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": false,
+      "strings": true
+    },
+
+    // Auto-complete brackets and quotes
+    "editor.autoClosingBrackets": "always",
+    "editor.autoClosingQuotes": "always",
+    "editor.autoSurround": "languageDefined"
+  },
+
+  // ==========================================================================
+  // FILE EXPLORER CONFIGURATION
+  // ==========================================================================
+
+  // Group GraphQL files in explorer
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.patterns": {
+    "*.graphql": "*.gql"
+  },
+
+  // Show GraphQL files prominently
+  "workbench.iconTheme": "vs-minimal",
+  "file-icons.associations": {
+    "*.graphql": "graphql",
+    "*.gql": "graphql"
+  },
+
+  // ==========================================================================
+  // EDITOR ENHANCEMENTS FOR MCP DEVELOPMENT
+  // ==========================================================================
+
+  // Enable breadcrumbs for navigation
+  "breadcrumbs.enabled": true,
+  "breadcrumbs.showFiles": true,
+  "breadcrumbs.showSymbols": true,
+
+  // Show outline view for GraphQL operations
+  "outline.showFields": true,
+  "outline.showFunctions": true,
+  "outline.showVariables": true,
+
+  // Enable folding for GraphQL selections
+  "editor.foldingStrategy": "indentation",
+  "editor.showFoldingControls": "always",
+
+  // ==========================================================================
+  // SEARCH AND FIND CONFIGURATION
+  // ==========================================================================
+
+  // Include GraphQL files in search
+  "search.include": {
+    "**/*.graphql": true,
+    "**/*.gql": true,
+    "tools/**": true,
+    ".apollo/**": true
+  },
+
+  // ==========================================================================
+  // YAML CONFIGURATION FOR APOLLO CONFIG FILES
+  // ==========================================================================
+
+  // Configure YAML settings for Apollo configuration files
+  "[yaml]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.formatOnSave": true,
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": false,
+      "strings": true
+    }
+  },
+
+  // ==========================================================================
+  // JSON SCHEMA CONFIGURATION FOR APOLLO ROUTER AND MCP SERVER
+  // ==========================================================================
+
+  // YAML Schema validation for Apollo configuration files
+  // This provides intellisense, validation, and auto-completion for Apollo config files
+  // For detailed instructions, see: .vscode/schemas/README.md
+  "yaml.schemas": {
+    // Apollo MCP Server configuration schema
+    ".vscode/schemas/mcp-server.schema.json": [
+      ".apollo/mcp.*.yaml",
+      "mcp.*.yaml"
+    ],
+
+    // Apollo Router configuration schema (basic version)
+    // For complete schema, run: ./router config schema > .vscode/schemas/router-config.schema.json
+    ".vscode/schemas/router-config.schema.json": [
+      "router.yaml",
+      "*/router.yaml",
+      ".apollo/router*.yaml"
+    ]
+  },
+
+  // ==========================================================================
+  // DOCKERFILE CONFIGURATION
+  // ==========================================================================
+
+  // Configure Docker file settings
+  "[dockerfile]": {
+    "editor.quickSuggestions": {
+      "strings": true
+    },
+    "editor.formatOnSave": true
+  },
+
+  // ==========================================================================
+  // JSON CONFIGURATION FOR CONFIG FILES
+  // ==========================================================================
+
+  // Configure JSON files (like Claude Desktop config)
+  "[json]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.formatOnSave": true,
+    "editor.quickSuggestions": {
+      "strings": true
+    }
+  },
+
+  "[jsonc]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.formatOnSave": true
+  },
+
+  // ==========================================================================
+  // INTEGRATED TERMINAL CONFIGURATION
+  // ==========================================================================
+
+  // Configure terminal for Apollo Key and Graph Ref
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "terminal.integrated.env.osx": {
+    "APOLLO_KEY": "service:energy-2-gv93o99:gK90X_Cp-fGCbxtvljkItA",
+    "APOLLO_GRAPH_REF": "energy-2-gv93o99@current"
+  },
+  "terminal.integrated.env.linux": {
+    "APOLLO_KEY": "service:energy-2-gv93o99:gK90X_Cp-fGCbxtvljkItA",
+    "APOLLO_GRAPH_REF": "energy-2-gv93o99@current"
+  },
+  "terminal.integrated.env.windows": {
+    "APOLLO_KEY": "service:energy-2-gv93o99:gK90X_Cp-fGCbxtvljkItA",
+    "APOLLO_GRAPH_REF": "energy-2-gv93o99@current"
+  },
+
+  // ==========================================================================
+  // TASKS AND DEBUGGING CONFIGURATION
+  // ==========================================================================
+
+  // Enable problem matcher for GraphQL validation
+  "problems.decorations.enabled": true,
+  "problems.showCurrentInStatus": true,
+
+  // Configure git integration for GraphQL files
+  "git.decorations.enabled": true,
+  "scm.diffDecorations": "all",
+
+  // ==========================================================================
+  // COMMENTS AND DOCUMENTATION
+  // ==========================================================================
+
+  // Better comment highlighting in GraphQL files
+  "editor.comments.insertSpace": true,
+  "files.trimTrailingWhitespace": true,
+  "files.trimFinalNewlines": true,
+  "files.insertFinalNewline": true
+}

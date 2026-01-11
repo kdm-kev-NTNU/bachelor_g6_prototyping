@@ -1,0 +1,42 @@
+
+Project details
+   • MCP Server Name: energy-2
+   • GraphOS Organization: kevin-dennis-mazalis-team
+
+GraphOS credentials for your graph
+   • APOLLO_GRAPH_REF: energy-2-gv93o99@current
+   • APOLLO_KEY: service:energy-2-gv93o99:gK90X_Cp-fGCbxtvljkItA (This is your graph's API key)
+
+
+Next steps ↴
+
+1. Connect an AI client to your MCP server:
+
+   Your MCP server name: energy-2
+   MCP endpoint: http://127.0.0.1:5050/mcp
+
+   For Claude Desktop setup: rover docs open mcp-qs
+
+2. Start the subgraph server by running the following commands in order:
+
+   npm i
+   npm run dev
+
+3. Start MCP server (after completing the above steps):
+
+   Linux/macOS: set -a && source .env && set +a && rover dev --supergraph-config supergraph.yaml --mcp .apollo/mcp.local.yaml
+
+   Windows PowerShell:
+   Get-Content .env | ForEach-Object { $name, $value = $_.split('=',2); [System.Environment]::SetEnvironmentVariable($name, $value) }
+   rover dev --supergraph-config supergraph.yaml --mcp .apollo/mcp.local.yaml
+
+   → API: http://localhost:4000 | MCP: http://localhost:5050
+
+3. Try it out in Claude:
+   Ask "What tools do I have available?" or "Can you get me some product information?"
+
+Next steps:
+- Customize endpoints → See the schema.graphql file
+- Create tools → Studio's Sandbox Explorer: http://localhost:4000
+- Deploy → rover docs open mcp-deploy
+- Learn more → rover docs open mcp-qs

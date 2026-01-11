@@ -44,6 +44,6 @@ if (-not $McpOnly) {
     Write-Host "[2/2] Starting MCP Server..." -ForegroundColor Yellow
 }
 
-# Set environment and run MCP
+# Run MCP GraphQL Server
 $env:ENDPOINT = $GraphQLEndpoint
 npx -y mcp-graphql

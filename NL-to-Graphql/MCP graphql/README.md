@@ -289,7 +289,7 @@ python load_graph.py --clear
 ## Referanser
 
 - [mcp-graphql (npm)](https://www.npmjs.com/package/mcp-graphql)
-- [Apollo MCP Server](https://www.apollographql.com/docs/apollo-mcp-server)
+- [Apollo MCP Server Docs](https://www.apollographql.com/docs/apollo-mcp-server) *(ikke på npm ennå)*
 - [Brick Schema](https://brickschema.org/)
 - [FalkorDB](https://www.falkordb.com/)
 - [Strawberry GraphQL](https://strawberry.rocks/)
