@@ -1,15 +1,49 @@
-# Start GraphQL MCP Server
-# This script starts the MCP server that connects Claude to your GraphQL API
+# Start GraphQL MCP Server for Energy Data
+# Connects Claude/Cursor to FalkorDB energy data via GraphQL
 
-Write-Host "Starting GraphQL MCP Server..." -ForegroundColor Green
-Write-Host "Make sure your GraphQL server is running at http://localhost:8000/graphql" -ForegroundColor Yellow
+param(
+    [switch]$StartGraphQL,
+    [switch]$McpOnly
+)
+
+$GraphQLEndpoint = "http://localhost:4000/graphql"
+
+Write-Host ""
+Write-Host "============================================" -ForegroundColor Cyan
+Write-Host "  Energy Data MCP Server" -ForegroundColor Cyan
+Write-Host "  FalkorDB -> GraphQL -> MCP -> AI" -ForegroundColor Cyan
+Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Change to the MCP graphql directory
 Set-Location $PSScriptRoot
 
-# Set the endpoint environment variable (required since mcp-graphql v1.0.0)
-$env:ENDPOINT = "http://localhost:8000/graphql"
+# Start GraphQL server if requested
+if ($StartGraphQL) {
+    Write-Host "[1/2] Starting GraphQL Server..." -ForegroundColor Yellow
+    Start-Process -NoNewWindow -FilePath "python" -ArgumentList "graphql_server.py"
+    Write-Host "     Waiting for server to start..." -ForegroundColor Gray
+    Start-Sleep -Seconds 3
+}
 
-# Run mcp-graphql server
+# Check if GraphQL server is running
+try {
+    $response = Invoke-WebRequest -Uri "$GraphQLEndpoint" -Method Post -ContentType "application/json" -Body '{"query": "{ __typename }"}' -TimeoutSec 5 -ErrorAction Stop
+    Write-Host "[OK] GraphQL server is running at $GraphQLEndpoint" -ForegroundColor Green
+} catch {
+    Write-Host "[!] GraphQL server not responding at $GraphQLEndpoint" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Start the GraphQL server first:" -ForegroundColor Yellow
+    Write-Host "  python graphql_server.py" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Or use: .\start-mcp-server.ps1 -StartGraphQL" -ForegroundColor Yellow
+    exit 1
+}
+
+if (-not $McpOnly) {
+    Write-Host ""
+    Write-Host "[2/2] Starting MCP Server..." -ForegroundColor Yellow
+}
+
+# Set environment and run MCP
+$env:ENDPOINT = $GraphQLEndpoint
 npx -y mcp-graphql
