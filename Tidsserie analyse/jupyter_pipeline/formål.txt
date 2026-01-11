@@ -1,0 +1,48 @@
+Basert på tidligere research har man skjønt at LLMs er ikke spesialisert på å forstå rå tidsserie data, dermed trenger man
+å utforske hvordan man kan analysere og komprimere slik informasjon på en måte som er LLM-vennlig. 
+
+Dette er det man utfosrker i denne mappen her, for å få et innblikk i hvordan det kan fungere. 
+
+Verktøy = TSFRESH
+
+Prosessering av tidsseriedata 
+ 
+Formål: Få en ide på samhandlingen mellom tidseriedata og LLM-en hva som må bli tatt i betraktning for at det skal funke
+
+Kjerneproblem
+ Tidsseriedata kan ikke gis direkte til LLM. Data må først behandles deterministisk og oversettes til forklarbare mellomrepresentasjoner.
+ 
+Overordnet flyt
+1.	Tidsseriedata hentes
+2.	Numerisk analyse i Python (resampling, aggregering, deteksjon)
+3.	Ekstraksjon av features og sammendrag
+4.	Strukturert overlevering til LLM (tekst eller JSON)
+ 
+ 
+Før LLM (obligatorisk, deterministisk)
+•	Resampling og aggregering
+•	Trend-, sesong- og avviksanalyse
+•	Change point / event detection
+•	Utføres med klassiske TS-metoder og ML (ikke LLM)
+ 
+(skal utforskes med tsfresh – i en prototype)
+Forskningsmessig forankring (TS → Text)
+•	Rå tidsserier skal ikke gis direkte til språkmodeller
+•	Alltid bruke mellomliggende representasjoner
+•	Fokus på forklarende narrativer, ikke prediksjon
+ 
+Representasjon til LLM
+•	Tekstlig, strukturert sammendrag (mest forklarbart og robust)
+•	JSON / semi-strukturert format (for videre resonnering, tiltak, visualisering)
+ 
+Avgrensninger
+•	Nivå 1: Forklaring av historiske data
+•	Nivå 2 (senere): Prediksjon
+•	Prioriterer forklarbarhet over maksimal presisjon
+ 
+Designvalg
+•	Skjuler tekniske detaljer som standard
+•	Mulighet for økt kompleksitet ved behov
+•	LLM styrer ikke oppløsning dynamisk (for å unngå kompleks dialogflyt)
+
+

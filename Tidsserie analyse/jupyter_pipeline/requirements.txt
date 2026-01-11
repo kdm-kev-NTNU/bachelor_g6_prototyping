@@ -1,0 +1,23 @@
+# Tidsserie-til-LLM Pipeline avhengigheter
+
+# Feature extraction
+tsfresh>=0.20.0
+
+# Databehandling
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Visualisering
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Statistiske metoder
+scipy>=1.10.0
+
+# LLM integrasjon
+openai>=1.0.0
+python-dotenv>=1.0.0
+
+# Jupyter notebook
+jupyter>=1.0.0
+ipykernel>=6.0.0
