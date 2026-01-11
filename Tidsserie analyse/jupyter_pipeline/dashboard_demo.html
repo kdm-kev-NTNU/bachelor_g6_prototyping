@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tidsserie-LLM Pipeline Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0f0f1a;
+            --bg-card: #1a1a2e;
+            --accent-blue: #4361ee;
+            --accent-purple: #7209b7;
+            --accent-pink: #f72585;
+            --accent-green: #06d6a0;
+            --accent-orange: #fb8500;
+            --text-primary: #edf2f4;
+            --text-secondary: #8d99ae;
+            --border-color: #2b2d42;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+            padding: 2rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            position: relative;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+            position: relative;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .pipeline-flow {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 2rem 0;
+            flex-wrap: wrap;
+        }
+        
+        .pipeline-step {
+            background: var(--bg-card);
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            text-align: center;
+            min-width: 140px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .pipeline-step:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(67, 97, 238, 0.3);
+        }
+        
+        .pipeline-step .icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .pipeline-arrow {
+            font-size: 1.5rem;
+            color: var(--accent-blue);
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            transition: transform 0.3s;
+        }
+        
+        .card:hover {
+            transform: translateY(-3px);
+        }
+        
+        .card h3 {
+            color: var(--accent-blue);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+        
+        .stat {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(67, 97, 238, 0.1);
+            border-radius: 12px;
+        }
+        
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .chart-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            margin-top: 2rem;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover, .tab.active {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+        
+        .tab-content {
+            display: none;
+            padding: 1rem;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            white-space: pre-wrap;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .score-bar {
+            height: 8px;
+            background: var(--border-color);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+        
+        .score-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease-out;
+        }
+        
+        .eval-card {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+        }
+        
+        .score-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        
+        .score-label {
+            color: var(--text-secondary);
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin: 0.25rem;
+        }
+        
+        .badge-success {
+            background: rgba(6, 214, 160, 0.2);
+            color: var(--accent-green);
+        }
+        
+        .badge-warning {
+            background: rgba(251, 133, 0, 0.2);
+            color: var(--accent-orange);
+        }
+        
+        .demo-notice {
+            background: linear-gradient(135deg, rgba(251, 133, 0, 0.2), rgba(247, 37, 133, 0.2));
+            border: 1px solid var(--accent-orange);
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Tidsserie-LLM Pipeline</h1>
+        <p>Automatisk analyse og forklaring av tidsseriedata med AI</p>
+    </div>
+    
+    <div class="container">
+        <div class="demo-notice">
+            <strong>Demo-modus:</strong> Dette er en eksempel-visning. Kjør notebooken for å generere reelle resultater.
+        </div>
+        
+        <!-- Pipeline Flow -->
+        <div class="pipeline-flow">
+            <div class="pipeline-step">
+                <div class="icon">📊</div>
+                <div>Tidsseriedata</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">⚙️</div>
+                <div>Prosessering</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">🔬</div>
+                <div>TSFRESH</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">🤖</div>
+                <div>LLM</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">⭐</div>
+                <div>Evaluering</div>
+            </div>
+        </div>
+        
+        <!-- Key Statistics -->
+        <div class="card">
+            <h3>📈 Nøkkelstatistikk (Eksempeldata)</h3>
+            <div class="stat-grid">
+                <div class="stat">
+                    <div class="stat-value">2160</div>
+                    <div class="stat-label">Datapunkter</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">89</div>
+                    <div class="stat-label">Dager</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">110.88</div>
+                    <div class="stat-label">Gjennomsnitt</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">increasing</div>
+                    <div class="stat-label">Trend</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">5</div>
+                    <div class="stat-label">Anomalier</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">12:00</div>
+                    <div class="stat-label">Peak-time</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- LLM Explanations -->
+        <div class="card" style="margin-top: 1.5rem;">
+            <h3>🤖 LLM-Genererte Forklaringer</h3>
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('general')">Generell</button>
+                <button class="tab" onclick="showTab('technical')">Teknisk</button>
+                <button class="tab" onclick="showTab('business')">Forretning</button>
+            </div>
+            <div id="general" class="tab-content active">
+Dataene viser en tydelig økende trend over de 89 dagene som er analysert.
+
+Hovedfunn:
+• Aktiviteten øker jevnt med ca. 0.22 enheter per dag
+• Det er et klart daglig mønster med høyest aktivitet rundt kl. 12:00
+• Helgene har lavere aktivitet enn ukedagene (ca. 14.5 enheter forskjell)
+• Det ble funnet 5 uvanlige datapunkter (anomalier) som avviker betydelig fra normalen
+
+Dette mønsteret tyder på at det er en naturlig døgnrytme i dataene, med en generell positiv utvikling over tid.
+            </div>
+            <div id="technical" class="tab-content">
+Statistisk analyse av tidsserien:
+
+• N = 2160 observasjoner (timesdata over 89 dager)
+• μ = 110.88, σ = 15.0
+• Lineær trend: slope = 0.221, R² = 0.4163
+• Sesongdekomponering viser signifikant daglig og ukentlig mønster
+• Anomalideteksjon med Z-score > 2.5 identifiserte 5 outliers
+
+Anbefaling: Vurder ARIMA eller Prophet for prediksjon.
+            </div>
+            <div id="business" class="tab-content">
+Nøkkelinnsikter for beslutningstakere:
+
+1. Vekst: Positiv trend indikerer økt etterspørsel/aktivitet
+2. Timing: Ressurser bør prioriteres rundt kl. 12:00
+3. Ukedager: Fokuser innsats på ukedager for maksimal effekt
+4. Anomalier: 5 hendelser krever nærmere undersøkelse
+
+Anbefalt handling: Øk kapasitet på dagtid på ukedager.
+            </div>
+        </div>
+        
+        <!-- Evaluations -->
+        <div class="chart-container">
+            <h3 style="color: var(--accent-blue); margin-bottom: 1rem;">⭐ LLM-as-a-Judge Evaluering</h3>
+            <canvas id="evalChart"></canvas>
+        </div>
+        
+        <div class="grid" style="margin-top: 1.5rem;">
+            <div class="card">
+                <h3 style="color: var(--accent-blue);">Generell Forklaring</h3>
+                <div class="eval-card">
+                    <div class="score-item">
+                        <span class="score-label">Nøyaktighet</span>
+                        <span>4.5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 90%; background: var(--accent-blue);"></div></div>
+                    
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Klarhet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-green);"></div></div>
+                    
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Fullstendighet</span>
+                        <span>4/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 80%; background: var(--accent-purple);"></div></div>
+                    
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Total Score</span>
+                        <span style="font-weight: bold; font-size: 1.2rem;">4.4/5</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <strong style="color: var(--accent-green);">Styrker:</strong><br>
+                    <span class="badge badge-success">Lett å forstå</span>
+                    <span class="badge badge-success">God struktur</span>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <strong style="color: var(--accent-orange);">Forbedringer:</strong><br>
+                    <span class="badge badge-warning">Mer kontekst</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 style="color: var(--accent-green);">Teknisk Forklaring</h3>
+                <div class="eval-card">
+                    <div class="score-item">
+                        <span class="score-label">Nøyaktighet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-blue);"></div></div>
+                    
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Klarhet</span>
+                        <span>4/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 80%; background: var(--accent-green);"></div></div>
+                    
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Fullstendighet</span>
+                        <span>4.5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 90%; background: var(--accent-purple);"></div></div>
+                    
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Total Score</span>
+                        <span style="font-weight: bold; font-size: 1.2rem;">4.5/5</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <strong style="color: var(--accent-green);">Styrker:</strong><br>
+                    <span class="badge badge-success">Presis</span>
+                    <span class="badge badge-success">Metodisk</span>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <strong style="color: var(--accent-orange);">Forbedringer:</strong><br>
+                    <span class="badge badge-warning">Forenkle sjargong</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 style="color: var(--accent-pink);">Forretnings Forklaring</h3>
+                <div class="eval-card">
+                    <div class="score-item">
+                        <span class="score-label">Nøyaktighet</span>
+                        <span>4/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 80%; background: var(--accent-blue);"></div></div>
+                    
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Klarhet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-green);"></div></div>
+                    
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Handlingsorientert</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-purple);"></div></div>
+                    
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Total Score</span>
+                        <span style="font-weight: bold; font-size: 1.2rem;">4.6/5</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <strong style="color: var(--accent-green);">Styrker:</strong><br>
+                    <span class="badge badge-success">Handlingsrettet</span>
+                    <span class="badge badge-success">Konkrete tiltak</span>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <strong style="color: var(--accent-orange);">Forbedringer:</strong><br>
+                    <span class="badge badge-warning">ROI-estimat</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>Tidsserie-LLM Pipeline Dashboard | Demo-versjon</p>
+    </div>
+    
+    <script>
+        // Tab functionality
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        // Evaluation Chart
+        const ctx = document.getElementById('evalChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: ['Nøyaktighet', 'Klarhet', 'Fullstendighet', 'Relevans', 'Handlingsorientert'],
+                datasets: [
+                    {
+                        label: 'Generell',
+                        data: [4.5, 5, 4, 4, 4],
+                        borderColor: '#4361ee',
+                        backgroundColor: 'rgba(67, 97, 238, 0.2)'
+                    },
+                    {
+                        label: 'Teknisk',
+                        data: [5, 4, 4.5, 4.5, 3.5],
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.2)'
+                    },
+                    {
+                        label: 'Forretning',
+                        data: [4, 5, 4, 5, 5],
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.2)'
+                    }
+                ]
+            },
+            options: {
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 5,
+                        ticks: { color: '#8d99ae' },
+                        grid: { color: '#2b2d42' },
+                        pointLabels: { color: '#edf2f4' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#edf2f4' }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

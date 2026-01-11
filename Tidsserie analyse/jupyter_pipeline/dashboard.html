@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tidsserie-LLM Pipeline Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0f0f1a;
+            --bg-card: #1a1a2e;
+            --accent-blue: #4361ee;
+            --accent-purple: #7209b7;
+            --accent-pink: #f72585;
+            --accent-green: #06d6a0;
+            --accent-orange: #fb8500;
+            --text-primary: #edf2f4;
+            --text-secondary: #8d99ae;
+            --border-color: #2b2d42;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+            padding: 2rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            position: relative;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+            position: relative;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .pipeline-flow {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 2rem 0;
+            flex-wrap: wrap;
+        }
+
+        .pipeline-step {
+            background: var(--bg-card);
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            text-align: center;
+            min-width: 140px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .pipeline-step:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(67, 97, 238, 0.3);
+        }
+
+        .pipeline-step .icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .pipeline-arrow {
+            font-size: 1.5rem;
+            color: var(--accent-blue);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            transition: transform 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-3px);
+        }
+
+        .card h3 {
+            color: var(--accent-blue);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+
+        .stat {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(67, 97, 238, 0.1);
+            border-radius: 12px;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .chart-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            margin-top: 2rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tab:hover, .tab.active {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .tab-content {
+            display: none;
+            padding: 1rem;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            white-space: pre-wrap;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .score-bar {
+            height: 8px;
+            background: var(--border-color);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .score-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease-out;
+        }
+
+        .eval-card {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+        }
+
+        .score-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .score-label {
+            color: var(--text-secondary);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin: 0.25rem;
+        }
+
+        .badge-success {
+            background: rgba(6, 214, 160, 0.2);
+            color: var(--accent-green);
+        }
+
+        .badge-warning {
+            background: rgba(251, 133, 0, 0.2);
+            color: var(--accent-orange);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Tidsserie-LLM Pipeline</h1>
+        <p>Automatisk analyse og forklaring av tidsseriedata med AI</p>
+    </div>
+
+    <div class="container">
+        <!-- Pipeline Flow -->
+        <div class="pipeline-flow">
+            <div class="pipeline-step">
+                <div class="icon">📊</div>
+                <div>Tidsseriedata</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">⚙️</div>
+                <div>Prosessering</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">🔬</div>
+                <div>TSFRESH</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">🤖</div>
+                <div>LLM</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="icon">⭐</div>
+                <div>Evaluering</div>
+            </div>
+        </div>
+
+        <!-- Key Statistics -->
+        <div class="card">
+            <h3>📈 Nøkkelstatistikk</h3>
+            <div class="stat-grid">
+                <div class="stat">
+                    <div class="stat-value">2160</div>
+                    <div class="stat-label">Datapunkter</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">89</div>
+                    <div class="stat-label">Dager</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">110.88</div>
+                    <div class="stat-label">Gjennomsnitt</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">increasing</div>
+                    <div class="stat-label">Trend</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">13</div>
+                    <div class="stat-label">Anomalier</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">12:00</div>
+                    <div class="stat-label">Peak-time</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- LLM Explanations -->
+        <div class="card" style="margin-top: 1.5rem;">
+            <h3>🤖 LLM-Genererte Forklaringer</h3>
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('general')">Generell</button>
+                <button class="tab" onclick="showTab('technical')">Teknisk</button>
+                <button class="tab" onclick="showTab('business')">Forretning</button>
+            </div>
+            <div id="general" class="tab-content active">Her er en oversikt over tidsserieanalysen som gir innsikt i dataene fra perioden januar til mars 2025:
+
+### 1. Hva dataene viser overordnet
+Dataene vi har analysert stammer fra en tidsperiode på 89 dager, der vi har samlet inn informasjon hver time, totalt 2160 datapunkter. I gjennomsnitt ligger verdiene rundt 110,88, noe som gir oss et godt utgangspunkt for å forstå aktiviteten i denne perioden.
+
+### 2. Viktige mønstre og trender
+Vi har identifisert en **økende trend** i dataene, som betyr at aktiviteten gradvis har økt over tid, med en gjennomsnittlig økning på 0,221 enheter for hver time. Dette kan tyde på at det er økende interesse eller aktivitet i det vi analyserer. 
+
+Når det gjelder **daglige mønstre**, ser vi at aktiviteten er høyest rundt kl. 12:00, noe som kan indikere at dette er et tidspunkt med mye aktivitet eller engasjement. På den annen side er aktiviteten lavest kl. 23:00. Det er også interessant å merke seg at **ukentlig**, helgene viser en lavere aktivitet sammenlignet med ukedagene, med en forskjell på 14,5 enheter.
+
+### 3. Uvanlige hendelser (anomalier)
+Vi har identifisert 13 datapunkter som er betydelig høyere eller lavere enn de øvrige verdiene. Disse anomaliene kan indikere spesielle hendelser eller forhold som skiller seg ut fra det normale mønsteret. Det kan være viktig å undersøke disse nærmere for å forstå hva som forårsaket dem.
+
+### 4. Hva dette kan bety i praksis
+For beslutningstakere betyr dette at det er en generell økning i aktiviteten, noe som kan være en indikasjon på at tiltakene eller strategiene vi har implementert, fungerer. Den høyeste aktiviteten rundt middagstid kan gi oss mulighet til å fokusere markedsføring eller ressurser på dette tidspunktet for å maksimere innvirkningen.
+
+Helgene, derimot, kan være et område der vi ønsker å se nærmere på hvordan vi kan øke engasjementet. De uvanlige datapunktene bør også analyseres for å se om de representerer muligheter eller utfordringer som vi må håndtere.
+
+Samlet sett gir denne analysen oss verdifull informasjon som kan hjelpe oss med å ta informerte beslutninger om fremtidige strategier og tiltak.</div>
+            <div id="technical" class="tab-content">### Tidsserieanalyse - Sammendrag
+
+#### 1. Statistiske karakteristikker
+Tidsserien analyserer data fra 1. januar 2025 til 31. mars 2025, med en total varighet på 89 dager og 2160 datapunkter målt timevis. Nøkkelstatistikken viser at:
+
+- **Gjennomsnittlig verdi:** 110.88
+- **Standardavvik:** 15.0, som indikerer variasjonen i dataene.
+- **Minimumsverdi:** 43.6 og **maksimumsverdi:** 198.66, noe som gir en **spredning** (range) på 155.06, som illustrerer forskjellen mellom de høyeste og laveste verdiene i datasettet.
+
+#### 2. Signifikante mønstre
+**Trend:**
+Analysen viser en **økende trend** med en gjennomsnittlig økning på +0.221 enheter per tidsenhet. Forklaringsgraden (R²) er 0.4163, noe som tyder på at omtrent 41.63% av variasjonen i dataene kan forklares av den identifiserte trenden.
+
+**Sesongmønstre:**
+- **Daglig mønster:** Aktiviteten topper kl. 12:00 med en amplitude på 30.64 enheter, og er på sitt laveste kl. 23:00.
+- **Ukentlig mønster:** Det er en signifikant forskjell mellom helger og ukedager, med en gjennomsnittlig verdi på 115.06 for ukedager og 100.59 for helger, som viser en reduksjon på 14.5 enheter i helgene.
+
+#### 3. Metodologiske observasjoner
+Analysen benytter statistiske metoder for å identifisere trender og sesongmønstre i tidsseriedataene. Anomalier ble også undersøkt, og det ble identifisert 13 datapunkter med uvanlig høye eller lave verdier. Dette kan indikere eksterne faktorer eller feil i datainnsamlingen som krever videre granskning.
+
+#### 4. Anbefalinger for videre analyse
+- **Anomalideteksjon:** Utforsk årsakene til de 13 identifiserte anomaliene for å avgjøre om de er resultat av datainnsamlingsfeil eller ekte ekstreme hendelser.
+- **Modellering:** Vurder å bruke mer avanserte modeller som ARIMA eller GARCH for å fange opp både sesongmønstre og trender mer presist.
+- **Eksterne faktorer:** Undersøk mulige eksterne faktorer (f.eks. vær, ferie- eller høytidsperioder) som kan påvirke dataene, spesielt med tanke på de ukentlige variasjonene.
+- **Langsiktig prognose:** Utvikle prognosemodeller for fremtidige perioder basert på de identifiserte trendene og sesongmønstrene for å bedre informere beslutningstaking.
+
+Dette sammendraget gir en teknisk oversikt over tidsserieanalysen og legger grunnlaget for videre undersøkelser og forbedringer i datastyring og -analyse.</div>
+            <div id="business" class="tab-content">### 1. Nøkkelinnsikter
+- **Økende trend**: Det er en stabil økning i aktiviteten over tid, med en vekstrate på +0.221 per time, noe som indikerer en positiv utvikling i forretningsaktiviteten.
+- **Daglig aktivitetsmønster**: Aktiviteten topper seg rundt kl. 12:00, noe som kan indikere en høy etterspørsel eller aktivitet i denne tidsperioden, mens den er lavest rundt kl. 23:00.
+- **Ukentlig variasjon**: Det er en forskjell i aktivitet mellom ukedager og helger, der ukedager har en gjennomsnittlig aktivitet på 115.06, som er betydelig høyere enn helgens snitt på 100.59.
+- **Anomalier**: Det er identifisert 13 datapunkter med uvanlig høye eller lave verdier, noe som kan indikere spesielle hendelser eller problemer som påvirker dataene.
+- **Spredning i aktivitet**: Med en spredning på 155.06, er det stor variasjon i aktivitetsnivået, noe som kan tyde på både muligheter og utfordringer i å forutsi fremtidig etterspørsel.
+
+### 2. Potensielle årsaker
+- **Økt etterspørsel**: Den økende trenden kan skyldes høyere etterspørsel etter produkter eller tjenester, muligens drevet av markedsføring, sesongvariasjoner eller endringer i kundenes preferanser.
+- **Tidspunkt for aktivitet**: Den daglige aktiviteten kan reflektere når kundene er mest tilgjengelige eller villige til å engasjere seg, for eksempel lunsjpauser eller fritid.
+- **Helgeaktivitet**: Den lavere aktiviteten i helgene kan være et resultat av forretningsmodellen, der tilbudet er mer fokusert på ukedager, eller at kundene har mindre behov for tjenestene i helgene.
+- **Anomalier**: Uvanlige datapunkter kan være forårsaket av systemfeil, spesielle markedsføringskampanjer, eller eksterne faktorer som vær, ferie eller hendelser.
+
+### 3. Anbefalte tiltak
+- **Kapasitetsplanlegging**: Basert på den økende trenden, bør virksomheten vurdere å øke kapasiteten (f.eks. bemanning, lagerbeholdning) for å håndtere den forventede økningen i etterspørsel.
+- **Optimalisering av tilbudet**: Utnytt det høye aktivitetsnivået rundt kl. 12:00 ved å tilby spesielle kampanjer eller tjenester i dette tidsvinduet.
+- **Helgestrategi**: Vurdere å utvikle spesifikke kampanjer eller aktiviteter for helgene for å øke engasjementet og aktiviteten i disse tidsperiodene.
+- **Anomalihåndtering**: Gjennomgå og analysere de 13 anomaliene for å forstå årsakene og implementere tiltak for å minimere slike hendelser i fremtiden.
+
+### 4. Risikofaktorer å følge med på
+- **Markedsendringer**: Endringer i konkurrentens tilbud eller endringer i kundens preferanser kan påvirke den økende trenden negativt.
+- **Kapasitetsoverskridelse**: Hvis den økende etterspørselen ikke blir møtt med tilstrekkelig kapasitet, kan dette føre til tapte salg og redusert kundetilfredshet.
+- **Feil i datainnsamling**: Anomalier kan oppstå fra datainnsamlingsfeil, og det er viktig å ha robuste prosesser for datavalidering.
+- **Sesongvariasjoner**: Hvis aktiviteten er sesongmessig, må man være forberedt på potensielle nedganger i etterspørselen i lavsesongperioder.</div>
+        </div>
+
+        <!-- Evaluations -->
+        <div class="chart-container">
+            <h3 style="color: var(--accent-blue); margin-bottom: 1rem;">⭐ LLM-as-a-Judge Evaluering</h3>
+            <canvas id="evalChart"></canvas>
+        </div>
+
+        <div class="grid" style="margin-top: 1.5rem;">
+            
+            <div class="card">
+                <h3 style="color: var(--accent-blue);">
+                    Generell Forklaring
+                </h3>
+                <div class="eval-card">
+                    <div class="score-item">
+                        <span class="score-label">Nøyaktighet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-blue);"></div></div>
+
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Klarhet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-green);"></div></div>
+
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Fullstendighet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-purple);"></div></div>
+
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Total Score</span>
+                        <span style="font-weight: bold; font-size: 1.2rem;">4.8/5</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <strong style="color: var(--accent-green);">Styrker:</strong><br>
+                    <span class="badge badge-success">Nøyaktig gjengivelse av dataene</span><span class="badge badge-success">Klar og forståelig språkbruk</span>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <strong style="color: var(--accent-orange);">Forbedringer:</strong><br>
+                    <span class="badge badge-warning">Mer spesifikasjon om hva anomaliene kan indikere</span><span class="badge badge-warning">Forslag til tiltak for å øke helgeengasjementet</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 style="color: var(--accent-green);">
+                    Teknisk Forklaring
+                </h3>
+                <div class="eval-card">
+                    <div class="score-item">
+                        <span class="score-label">Nøyaktighet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-blue);"></div></div>
+
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Klarhet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-green);"></div></div>
+
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Fullstendighet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-purple);"></div></div>
+
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Total Score</span>
+                        <span style="font-weight: bold; font-size: 1.2rem;">4.8/5</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <strong style="color: var(--accent-green);">Styrker:</strong><br>
+                    <span class="badge badge-success">Nøyaktig gjengivelse av dataanalysefakta</span><span class="badge badge-success">Klart og forståelig språk</span>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <strong style="color: var(--accent-orange);">Forbedringer:</strong><br>
+                    <span class="badge badge-warning">Kan inkludere spesifikke eksempler på hvordan man kan undersøke anomaliene</span><span class="badge badge-warning">Mer detaljer om potensielle eksterne faktorer</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 style="color: var(--accent-pink);">
+                    Forretning Forklaring
+                </h3>
+                <div class="eval-card">
+                    <div class="score-item">
+                        <span class="score-label">Nøyaktighet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-blue);"></div></div>
+
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Klarhet</span>
+                        <span>4/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 80%; background: var(--accent-green);"></div></div>
+
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Fullstendighet</span>
+                        <span>5/5</span>
+                    </div>
+                    <div class="score-bar"><div class="score-fill" style="width: 100%; background: var(--accent-purple);"></div></div>
+
+                    <div class="score-item" style="margin-top: 1rem;">
+                        <span class="score-label">Total Score</span>
+                        <span style="font-weight: bold; font-size: 1.2rem;">4.6/5</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <strong style="color: var(--accent-green);">Styrker:</strong><br>
+                    <span class="badge badge-success">Nøyaktig oppsummering av dataene</span><span class="badge badge-success">Identifikasjon av relevante trender og anomalier</span>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <strong style="color: var(--accent-orange);">Forbedringer:</strong><br>
+                    <span class="badge badge-warning">Forbedre språklig klarhet i enkelte avsnitt</span><span class="badge badge-warning">Gi mer spesifikke eksempler på tiltak</span>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Generert av Tidsserie-LLM Pipeline | 2026-01-11 14:06</p>
+    </div>
+
+    <script>
+        // Tab functionality
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Evaluation Chart
+        const ctx = document.getElementById('evalChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: ['Nøyaktighet', 'Klarhet', 'Fullstendighet', 'Relevans', 'Handlingsorientert'],
+                datasets: [
+                    {
+                        label: 'Generell',
+                        data: [5, 
+                               5, 
+                               5, 
+                               5, 
+                               4],
+                        borderColor: '#4361ee',
+                        backgroundColor: 'rgba(67, 97, 238, 0.2)'
+                    },
+                    {
+                        label: 'Teknisk',
+                        data: [5, 
+                               5, 
+                               5, 
+                               5, 
+                               4],
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.2)'
+                    },
+                    {
+                        label: 'Forretning',
+                        data: [5, 
+                               4, 
+                               5, 
+                               5, 
+                               4],
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.2)'
+                    }
+                ]
+            },
+            options: {
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 5,
+                        ticks: { color: '#8d99ae' },
+                        grid: { color: '#2b2d42' },
+                        pointLabels: { color: '#edf2f4' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#edf2f4' }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
