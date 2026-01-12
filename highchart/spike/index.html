@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="no">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Highcharts-LLM Analyzer Spike</title>
+
+    <!-- Highcharts -->
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/annotations.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+
+    <!-- Highcharts Connectors for Morningstar -->
+    <script src="https://code.highcharts.com/connectors/connectors.js"></script>
+    <script src="https://code.highcharts.com/connectors/connectors-morningstar.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;600;700&display=swap');
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a26;
+            --bg-elevated: #222230;
+            --accent-cyan: #00d4ff;
+            --accent-magenta: #ff00aa;
+            --accent-lime: #b4ff00;
+            --accent-orange: #ff6b35;
+            --text-primary: #f0f0f5;
+            --text-secondary: #8888aa;
+            --text-muted: #555566;
+            --border: #2a2a3a;
+            --success: #00ff88;
+            --warning: #ffaa00;
+            --error: #ff4466;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .app-header {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .app-header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-magenta));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .app-header .badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 999px;
+            color: var(--accent-cyan);
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 1.5rem;
+            padding: 1.5rem 2rem;
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 1200px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .chart-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-secondary);
+        }
+
+        .chart-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .chart-title .icon {
+            font-size: 1.25rem;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 500;
+            padding: 0.6rem 1.25rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-magenta));
+            color: var(--bg-primary);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        #chart-container {
+            height: 500px;
+            padding: 1rem;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-secondary);
+            font-weight: 600;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .panel-content {
+            padding: 1.25rem;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 400px;
+            max-height: 600px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .chat-message {
+            padding: 1rem;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            line-height: 1.7;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .chat-message.system {
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            border-left: 3px solid var(--accent-cyan);
+        }
+
+        .chat-message.analysis {
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(255, 0, 170, 0.1));
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+
+        .chat-message.error {
+            background: rgba(255, 68, 102, 0.1);
+            border: 1px solid var(--error);
+            color: var(--error);
+        }
+
+        .status-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .status-label {
+            color: var(--text-secondary);
+        }
+
+        .status-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+        }
+
+        .status-value.success {
+            color: var(--success);
+        }
+
+        .status-value.warning {
+            color: var(--warning);
+        }
+
+        .status-value.error {
+            color: var(--error);
+        }
+
+        .confidence-bar {
+            height: 6px;
+            background: var(--bg-elevated);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-lime));
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--bg-primary);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .annotations-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .annotation-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+
+        .annotation-marker {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            flex-shrink: 0;
+            margin-top: 0.35rem;
+        }
+
+        .annotation-text {
+            color: var(--text-secondary);
+        }
+
+        /* Highcharts tema overrides */
+        .highcharts-background {
+            fill: transparent;
+        }
+
+        .highcharts-title {
+            fill: var(--text-primary) !important;
+        }
+
+        .highcharts-axis-labels text {
+            fill: var(--text-secondary) !important;
+        }
+
+        .highcharts-grid-line {
+            stroke: var(--border) !important;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="app-header">
+        <h1>Highcharts-LLM Analyzer</h1>
+        <span class="badge">SPIKE v0.1</span>
+    </header>
+
+    <main class="main-container">
+        <section class="chart-section">
+            <div class="chart-card">
+                <div class="chart-toolbar">
+                    <div class="chart-title">
+                        <span class="icon">📈</span>
+                        TSLA Stock Price (Morningstar Data)
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="clearLLMAnnotations()">
+                            🗑️ Fjern AI-analyser
+                        </button>
+                        <button class="btn btn-primary" id="analyze-btn" onclick="analyzeChart()">
+                            🤖 Analyser med AI
+                        </button>
+                    </div>
+                </div>
+                <div id="chart-container"></div>
+            </div>
+        </section>
+
+        <aside class="sidebar">
+            <div class="panel">
+                <div class="panel-header">
+                    <span>⚙️</span> Status
+                </div>
+                <div class="panel-content status-panel">
+                    <div class="status-item">
+                        <span class="status-label">Backend</span>
+                        <span class="status-value" id="backend-status">Sjekker...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Data lastet</span>
+                        <span class="status-value" id="data-status">Venter...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">LLM Konfidensgrad</span>
+                        <span class="status-value" id="confidence-value">—</span>
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" id="confidence-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <span>🏷️</span> AI-genererte annotasjoner
+                </div>
+                <div class="panel-content">
+                    <div class="annotations-list" id="annotations-list">
+                        <div class="annotation-item">
+                            <div class="annotation-marker" style="background: var(--text-muted)"></div>
+                            <span class="annotation-text">Klikk "Analyser med AI" for å generere</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel chat-container">
+                <div class="panel-header">
+                    <span>💬</span> AI Analyse
+                </div>
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-message system">
+                        Velkommen! Last inn chartet og klikk "Analyser med AI" for å få en intelligent analyse av
+                        aksjedataene.
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        // Globale variabler
+        let chart = null;
+        let chartData = [];
+        let llmAnnotationIds = [];
+
+        const API_URL = 'http://localhost:8000';
+
+        // Morningstar konfigurasjon
+        const commonOptions = {
+            api: {
+                url: 'https://demo-live-data.highcharts.com',
+                access: {
+                    url: 'https://demo-live-data.highcharts.com/token/oauth',
+                    token: 'token'
+                }
+            }
+        };
+
+        const TeslaISIN = 'US88160R1014';
+
+        // Eksisterende annotasjoner (fra original koden)
+        const existingAnnotations = [
+            { date: '2020-08-20', y: 133.45, text: '5 for 1 Stock split announcement' },
+            { date: '2020-12-21', y: 216.62, text: 'Inclusion to S&P 500 Index' },
+            { date: '2021-04-01', y: 220.58, text: 'Record earnings in Q1 2021' },
+            { date: '2021-11-01', y: 402.86, text: 'Stock Sale by Elon Musk' },
+            { date: '2022-03-22', y: 331.33, text: "Berlin's giga factory opening" },
+            { date: '2022-04-12', y: 328.98, text: "Musk's Twitter acquisition" },
+            { date: '2023-09-16', y: 265.28, text: '5 million cars produced' },
+            { date: '2024-11-05', y: 251.44, text: 'Trump wins elections' },
+            { date: '2019-03-14', y: 19.33, text: 'Tesla Model Y announced' },
+            { date: '2019-11-21', y: 23.65, text: 'Tesla CyberTruck announced' },
+            { date: '2020-09-22', y: 141.41, text: 'Tesla Model S and X Plaid announced' },
+            { date: '2024-01-24', y: 207.83, text: 'Tesla Model 2 announced' }
+        ];
+
+        // Sjekk backend status
+        async function checkBackend() {
+            const statusEl = document.getElementById('backend-status');
+            try {
+                const response = await fetch(`${API_URL}/`);
+                const data = await response.json();
+                if (data.openai_available) {
+                    statusEl.textContent = 'Tilkoblet ✓';
+                    statusEl.className = 'status-value success';
+                } else {
+                    statusEl.textContent = 'Mangler API-nøkkel';
+                    statusEl.className = 'status-value warning';
+                }
+            } catch (e) {
+                statusEl.textContent = 'Ikke tilkoblet';
+                statusEl.className = 'status-value error';
+            }
+        }
+
+        // Last Morningstar-data og initialiser chart
+        async function initChart() {
+            const dataStatusEl = document.getElementById('data-status');
+
+            try {
+                const connector = new HighchartsConnectors.Morningstar.TimeSeriesConnector({
+                    ...commonOptions,
+                    series: { type: 'Price' },
+                    securities: [{ id: TeslaISIN, idType: 'ISIN' }],
+                    startDate: '2017-01-01',
+                    endDate: '2025-03-17',
+                    currencyId: 'USD'
+                });
+
+                await connector.load();
+                const cols = connector.getTable().getColumns();
+                const name = Array.from(Object.keys(cols).filter(k => k !== 'Date'))[0];
+                chartData = cols[name].map((value, i) => [cols.Date[i], value]);
+
+                dataStatusEl.textContent = `${chartData.length} punkter`;
+                dataStatusEl.className = 'status-value success';
+
+                createChart(chartData);
+
+            } catch (error) {
+                console.error('Kunne ikke laste data:', error);
+                dataStatusEl.textContent = 'Feil ved lasting';
+                dataStatusEl.className = 'status-value error';
+
+                // Fallback til mock-data for testing
+                addChatMessage('Kunne ikke laste Morningstar-data. Bruker mock-data.', 'error');
+                chartData = generateMockData();
+                dataStatusEl.textContent = `${chartData.length} (mock)`;
+                dataStatusEl.className = 'status-value warning';
+                createChart(chartData);
+            }
+        }
+
+        function generateMockData() {
+            const data = [];
+            let price = 20;
+            const start = new Date('2017-01-01').getTime();
+
+            for (let i = 0; i < 2000; i++) {
+                const timestamp = start + i * 24 * 60 * 60 * 1000;
+                price = price * (1 + (Math.random() - 0.48) * 0.03);
+                price = Math.max(10, price);
+                data.push([timestamp, Math.round(price * 100) / 100]);
+            }
+            return data;
+        }
+
+        function createChart(data) {
+            // Lag annotasjoner i Highcharts-format
+            const annotations = [{
+                draggable: '',
+                labelOptions: {
+                    shape: 'connector',
+                    style: { fontSize: '11px' }
+                },
+                labels: existingAnnotations.slice(0, 8).map((ann, i) => ({
+                    point: {
+                        xAxis: 0,
+                        yAxis: 0,
+                        x: ann.date,
+                        y: ann.y
+                    },
+                    text: ann.text,
+                    x: (i % 2 === 0) ? -80 : 80,
+                    y: -30
+                }))
+            }];
+
+            chart = Highcharts.chart('chart-container', {
+                chart: {
+                    type: 'area',
+                    backgroundColor: 'transparent',
+                    zooming: { type: 'x' },
+                    panning: true,
+                    panKey: 'shift'
+                },
+                title: {
+                    text: 'TSLA Stock Price 2017 - 2025',
+                    align: 'left',
+                    style: { color: '#f0f0f5', fontFamily: 'Outfit' }
+                },
+                credits: { enabled: false },
+                annotations: annotations,
+                xAxis: {
+                    type: 'datetime',
+                    labels: { style: { color: '#8888aa' } },
+                    gridLineColor: '#2a2a3a'
+                },
+                yAxis: {
+                    title: { text: null },
+                    labels: {
+                        format: '{value} USD',
+                        style: { color: '#8888aa' }
+                    },
+                    gridLineColor: '#2a2a3a'
+                },
+                tooltip: {
+                    pointFormat: '{point.y:.2f} USD',
+                    shared: true,
+                    backgroundColor: '#1a1a26',
+                    borderColor: '#2a2a3a',
+                    style: { color: '#f0f0f5' }
+                },
+                legend: { enabled: false },
+                series: [{
+                    data: data,
+                    color: '#00d4ff',
+                    fillColor: {
+                        linearGradient: { x1: 0, x2: 0, y1: 0, y2: 1 },
+                        stops: [
+                            [0, 'rgba(0, 212, 255, 0.3)'],
+                            [1, 'rgba(0, 212, 255, 0.02)']
+                        ]
+                    },
+                    name: 'TSLA',
+                    marker: { enabled: false },
+                    threshold: null
+                }]
+            });
+        }
+
+        async function analyzeChart() {
+            if (!chart || chartData.length === 0) {
+                addChatMessage('Chartet er ikke lastet ennå.', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('analyze-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> Analyserer...';
+
+            addChatMessage('Sender chart-data til AI for analyse...', 'system');
+
+            // Bygg chart-state for API
+            const chartState = {
+                seriesData: chartData,
+                title: 'TSLA Stock Price',
+                timeRange: {
+                    start: '2017-01-01',
+                    end: '2025-03-17'
+                },
+                yAxisLabel: 'USD',
+                existingAnnotations: existingAnnotations
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(chartState)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ukjent feil');
+                }
+
+                const result = await response.json();
+
+                // Oppdater konfidensgrad
+                updateConfidence(result.confidence || 0.8);
+
+                // Legg til annotasjoner i chartet
+                applyLLMAnnotations(result);
+
+                // Vis analyse i chat
+                addChatMessage(result.summary, 'analysis');
+
+                // Oppdater annotasjonsliste
+                updateAnnotationsList(result.annotations || []);
+
+            } catch (error) {
+                console.error('Analyse feilet:', error);
+                addChatMessage(`Feil: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🤖 Analyser med AI';
+            }
+        }
+
+        function applyLLMAnnotations(result) {
+            // Fjern tidligere LLM-annotasjoner
+            clearLLMAnnotations();
+
+            // Legg til nye annotasjoner
+            if (result.annotations && result.annotations.length > 0) {
+                const llmAnnotation = {
+                    id: 'llm-annotations',
+                    draggable: '',
+                    labelOptions: {
+                        shape: 'connector',
+                        style: {
+                            fontSize: '10px',
+                            fontWeight: 'bold'
+                        },
+                        backgroundColor: 'rgba(255, 0, 170, 0.8)',
+                        borderColor: '#ff00aa'
+                    },
+                    labels: result.annotations.map(ann => ({
+                        point: {
+                            xAxis: 0,
+                            yAxis: 0,
+                            x: ann.point.x,
+                            y: ann.point.y
+                        },
+                        text: ann.text,
+                        x: ann.xOffset || -50,
+                        y: ann.yOffset || -30
+                    }))
+                };
+
+                chart.addAnnotation(llmAnnotation);
+                llmAnnotationIds.push('llm-annotations');
+            }
+
+            // Legg til plotBands
+            if (result.plotBands && result.plotBands.length > 0) {
+                result.plotBands.forEach((band, i) => {
+                    const bandId = `llm-plotband-${i}`;
+                    chart.xAxis[0].addPlotBand({
+                        id: bandId,
+                        from: new Date(band.from).getTime(),
+                        to: new Date(band.to).getTime(),
+                        color: band.color || 'rgba(255, 0, 170, 0.1)',
+                        label: {
+                            text: band.label || '',
+                            style: { color: '#ff00aa', fontSize: '10px' }
+                        }
+                    });
+                    llmAnnotationIds.push(bandId);
+                });
+            }
+
+            // Legg til plotLines
+            if (result.plotLines && result.plotLines.length > 0) {
+                result.plotLines.forEach((line, i) => {
+                    const lineId = `llm-plotline-${i}`;
+                    chart.xAxis[0].addPlotLine({
+                        id: lineId,
+                        value: new Date(line.value).getTime(),
+                        color: line.color || '#ff00aa',
+                        width: line.width || 2,
+                        dashStyle: line.dashStyle || 'Solid',
+                        label: {
+                            text: line.label || '',
+                            style: { color: '#ff00aa', fontSize: '10px' }
+                        }
+                    });
+                    llmAnnotationIds.push(lineId);
+                });
+            }
+        }
+
+        function clearLLMAnnotations() {
+            if (!chart) return;
+
+            // Fjern annotasjoner
+            const annotations = chart.annotations || [];
+            annotations.forEach(ann => {
+                if (ann.options.id === 'llm-annotations') {
+                    ann.destroy();
+                }
+            });
+
+            // Fjern plotBands og plotLines
+            llmAnnotationIds.forEach(id => {
+                if (id.includes('plotband')) {
+                    chart.xAxis[0].removePlotBand(id);
+                } else if (id.includes('plotline')) {
+                    chart.xAxis[0].removePlotLine(id);
+                }
+            });
+
+            llmAnnotationIds = [];
+
+            // Reset annotasjonsliste
+            document.getElementById('annotations-list').innerHTML = `
+                <div class="annotation-item">
+                    <div class="annotation-marker" style="background: var(--text-muted)"></div>
+                    <span class="annotation-text">Annotasjoner fjernet</span>
+                </div>
+            `;
+        }
+
+        function updateConfidence(value) {
+            const percent = Math.round(value * 100);
+            document.getElementById('confidence-value').textContent = `${percent}%`;
+            document.getElementById('confidence-bar').style.width = `${percent}%`;
+        }
+
+        function updateAnnotationsList(annotations) {
+            const container = document.getElementById('annotations-list');
+
+            if (annotations.length === 0) {
+                container.innerHTML = `
+                    <div class="annotation-item">
+                        <div class="annotation-marker" style="background: var(--text-muted)"></div>
+                        <span class="annotation-text">Ingen nye annotasjoner foreslått</span>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = annotations.map(ann => `
+                <div class="annotation-item">
+                    <div class="annotation-marker"></div>
+                    <span class="annotation-text">
+                        <strong>${ann.point.x}</strong>: ${ann.text}
+                    </span>
+                </div>
+            `).join('');
+        }
+
+        function addChatMessage(text, type = 'system') {
+            const container = document.getElementById('chat-messages');
+            const message = document.createElement('div');
+            message.className = `chat-message ${type}`;
+            message.textContent = text;
+            container.appendChild(message);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Initialiser ved lasting
+        document.addEventListener('DOMContentLoaded', () => {
+            checkBackend();
+            initChart();
+        });
+    </script>
+</body>
+
+</html>

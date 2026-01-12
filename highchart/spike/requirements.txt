@@ -1,0 +1,14 @@
+# Highcharts-LLM Spike - Avhengigheter
+
+# Web server
+fastapi>=0.109.0
+uvicorn>=0.27.0
+
+# LLM
+openai>=1.0.0
+
+# Validering
+pydantic>=2.0.0
+
+# Miljøvariabler
+python-dotenv>=1.0.0
