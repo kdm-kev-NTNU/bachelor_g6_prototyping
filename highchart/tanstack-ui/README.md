@@ -42,7 +42,7 @@ cd server
 python server.py
 ```
 
-Backend starter på `http://localhost:8000`
+Backend starter på `http://localhost:8001`
 
 ### 5. Start frontend
 

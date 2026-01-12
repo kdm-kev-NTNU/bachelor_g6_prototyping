@@ -65,11 +65,19 @@ OUTPUT SCHEMA:
 class ChatMessage(BaseModel):
     role: str
     parts: list[dict]
+    id: Optional[str] = None
+    createdAt: Optional[str] = None
+    
+    class Config:
+        extra = "allow"
 
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     data: Optional[dict] = None
+    
+    class Config:
+        extra = "allow"
 
 
 def format_sse(data: dict) -> str:
@@ -144,7 +152,7 @@ async def stream_chat_response(messages: list[ChatMessage]) -> AsyncGenerator[st
         })
 
 
-@app.get("/")
+@app.get("/api/")
 async def root():
     return {
         "status": "running",
@@ -171,5 +179,5 @@ if __name__ == "__main__":
     import uvicorn
     print("=== TanStack AI Chart Analyzer Backend ===")
     print(f"    OpenAI available: {client is not None}")
-    print("    SSE endpoint: http://localhost:8000/api/chat")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("    SSE endpoint: http://localhost:8001/api/chat")
+    uvicorn.run(app, host="0.0.0.0", port=8001)
