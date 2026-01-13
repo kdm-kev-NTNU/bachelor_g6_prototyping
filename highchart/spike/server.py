@@ -1,21 +1,31 @@
 """
 FastAPI Backend for Highcharts-LLM Chart Analyzer
 
-Mottar chart-state fra frontend, sender til GPT-4o for analyse,
-og returnerer gyldige Highcharts-modifikasjoner.
+REFAKTORERT: Deterministisk Chart-Conditioned Reasoning
+- LLM returnerer KUN semantiske funn
+- All Highcharts-manipulasjon skjer i kode via presets
+- Streng schema-validering
 """
 
 import os
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from dotenv import load_dotenv
 
-from schema import ChartStateInput, ChartAnalysisResponse
+# Nye semantiske moduler
+from analysis_schema import (
+    AnalysisResult,
+    AnalysisFinding,
+    ANALYSIS_SYSTEM_PROMPT,
+    ANALYSIS_JSON_SCHEMA,
+    EXAMPLE_ANALYSIS
+)
+from apply_findings import generate_chart_response
 
 # Last miljøvariabler
 load_dotenv()
@@ -29,8 +39,8 @@ except ImportError:
 
 app = FastAPI(
     title="Highcharts LLM Analyzer",
-    description="Spike: Tester LLM-basert chart-analyse med strukturert output",
-    version="0.1.0"
+    description="Deterministisk chart-analyse med semantiske funn",
+    version="0.2.0"
 )
 
 # CORS for lokal utvikling
@@ -52,65 +62,53 @@ if OPENAI_AVAILABLE:
         print("[WARN] OPENAI_API_KEY ikke satt i miljovariabler")
 
 
-SYSTEM_PROMPT = """Du er en finansanalytiker som analyserer aksjedata visualisert i Highcharts.
+# ==========================================
+# INPUT SCHEMA
+# ==========================================
 
-Din oppgave er å:
-1. ANALYSERE dataene og identifisere viktige mønstre, trender og hendelser
-2. FORESLÅ visuelle annotasjoner som hjelper brukeren å forstå dataene
-3. SKILLE mellom analyse (summary) og visualisering (annotations/plotBands)
+class ChartStateInput(BaseModel):
+    """Input fra frontend - chart-state som sendes til LLM."""
+    
+    series_data: list[list] = Field(
+        ...,
+        alias="seriesData",
+        description="Tidsseriedata som [[timestamp, value], ...]"
+    )
+    
+    title: Optional[str] = Field(default=None, description="Chart-tittel")
+    
+    time_range: dict = Field(
+        ...,
+        alias="timeRange",
+        description="{'start': 'YYYY-MM-DD', 'end': 'YYYY-MM-DD'}"
+    )
+    
+    y_axis_label: Optional[str] = Field(
+        default="Value",
+        alias="yAxisLabel",
+        description="Enhet/label for Y-aksen"
+    )
+    
+    existing_annotations: Optional[list[dict]] = Field(
+        default=None,
+        alias="existingAnnotations",
+        description="Eksisterende annotasjoner (for å unngå duplisering)"
+    )
+    
+    class Config:
+        populate_by_name = True
 
-VIKTIGE REGLER:
-- Returner KUN gyldig JSON som matcher det spesifiserte skjemaet
-- Datoer må være i formatet YYYY-MM-DD
-- Koordinater (y-verdier) må matche faktiske verdier i datasettet
-- Annotasjoner skal plasseres på reelle datapunkter
-- Ikke foreslå mer enn 5-8 annotasjoner for å unngå visuelt rot
-- plotBands brukes for å markere perioder (bullish/bearish/konsolidering)
-- plotLines brukes for viktige enkeltdatoer
 
-OUTPUT SCHEMA:
-{
-  "annotations": [
-    {
-      "point": {"x": "YYYY-MM-DD", "y": <faktisk verdi>},
-      "text": "Kort beskrivelse (maks 50 tegn)",
-      "xOffset": -50,  // plassering av label
-      "yOffset": -30
-    }
-  ],
-  "plotBands": [
-    {
-      "from": "YYYY-MM-DD",
-      "to": "YYYY-MM-DD", 
-      "color": "rgba(R, G, B, 0.1)",  // bruk lav opacity
-      "label": "Periode-beskrivelse"
-    }
-  ],
-  "plotLines": [
-    {
-      "value": "YYYY-MM-DD",
-      "color": "#hexcolor",
-      "width": 2,
-      "label": "Hendelse",
-      "dashStyle": "Dash"
-    }
-  ],
-  "summary": "Detaljert tekstlig analyse av dataene...",
-  "confidence": 0.85
-}
-
-ANALYSETIPS:
-- Se etter lokale topper og bunner
-- Identifiser trender (bullish/bearish/sidelengs)
-- Finn volatilitetsendringer
-- Marker signifikante prosentvise endringer (>10% på kort tid)
-- Korreler med kjente markedshendelser hvis relevant"""
-
+# ==========================================
+# PROMPT BUILDING
+# ==========================================
 
 def build_analysis_prompt(chart_state: ChartStateInput) -> str:
-    """Bygger prompt med chart-data for LLM."""
+    """
+    Bygger prompt med chart-data for LLM.
+    VIKTIG: Inneholder INGEN Highcharts-referanser.
+    """
     
-    # Sample data for å holde token-bruk nede
     data = chart_state.series_data
     sample_size = min(100, len(data))
     
@@ -121,23 +119,29 @@ def build_analysis_prompt(chart_state: ChartStateInput) -> str:
     else:
         sampled_data = data
     
-    # Beregn grunnleggende statistikk
+    # Beregn statistikk
     values = [d[1] for d in data if d[1] is not None]
+    if not values:
+        raise ValueError("Ingen gyldige verdier i datasettet")
+    
     stats = {
         "total_points": len(data),
         "sampled_points": len(sampled_data),
-        "min_value": round(min(values), 2) if values else 0,
-        "max_value": round(max(values), 2) if values else 0,
-        "start_value": round(values[0], 2) if values else 0,
-        "end_value": round(values[-1], 2) if values else 0,
-        "change_percent": round(((values[-1] - values[0]) / values[0]) * 100, 2) if values and values[0] != 0 else 0
+        "min_value": round(min(values), 2),
+        "max_value": round(max(values), 2),
+        "start_value": round(values[0], 2),
+        "end_value": round(values[-1], 2),
+        "change_percent": round(((values[-1] - values[0]) / values[0]) * 100, 2) if values[0] != 0 else 0,
+        "avg_value": round(sum(values) / len(values), 2),
+        "volatility": round(
+            (max(values) - min(values)) / (sum(values) / len(values)) * 100, 2
+        ) if sum(values) != 0 else 0
     }
     
     # Formater data for LLM
     formatted_data = []
     for point in sampled_data:
         if point[0] and point[1] is not None:
-            # Konverter timestamp til lesbar dato
             ts = point[0]
             if isinstance(ts, (int, float)):
                 date_str = datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d')
@@ -145,28 +149,80 @@ def build_analysis_prompt(chart_state: ChartStateInput) -> str:
                 date_str = str(ts)
             formatted_data.append(f"{date_str}: {round(point[1], 2)}")
     
-    prompt = f"""Analyser følgende aksjedata:
+    # Finn lokale topper og bunner for kontekst
+    local_extremes = find_local_extremes(data)
+    
+    prompt = f"""Analyser følgende tidsseriedata:
 
-CHART INFO:
+DATASETT INFO:
 - Tittel: {chart_state.title or 'Ukjent'}
 - Periode: {chart_state.time_range.get('start', 'N/A')} til {chart_state.time_range.get('end', 'N/A')}
-- Y-akse: {chart_state.y_axis_label or 'Pris'}
+- Måleenhet: {chart_state.y_axis_label or 'Verdi'}
 
 STATISTIKK:
 {json.dumps(stats, indent=2)}
 
+IDENTIFISERTE EKSTREMPUNKTER:
+{json.dumps(local_extremes, indent=2)}
+
 DATA (samplet fra {stats['total_points']} punkter):
-{chr(10).join(formatted_data[:50])}
-{"... og " + str(len(formatted_data) - 50) + " flere punkter" if len(formatted_data) > 50 else ""}
+{chr(10).join(formatted_data[:40])}
+{"... og " + str(len(formatted_data) - 40) + " flere punkter" if len(formatted_data) > 40 else ""}
 
-EKSISTERENDE ANNOTASJONER (ikke dupliser disse):
-{json.dumps(chart_state.existing_annotations, indent=2) if chart_state.existing_annotations else "Ingen"}
+KJENTE HENDELSER (ikke dupliser disse i funn):
+{json.dumps([ann.get('text', '') for ann in (chart_state.existing_annotations or [])], indent=2)}
 
-Gi meg en analyse med forslag til nye annotasjoner, plotBands og en tekstlig oppsummering.
-Fokuser på mønstre og hendelser som IKKE allerede er annotert."""
+Analyser dataene og identifiser semantiske funn.
+Fokuser på mønstre som IKKE allerede er kjent fra hendelseslisten.
+Returner KUN det spesifiserte JSON-skjemaet."""
     
     return prompt
 
+
+def find_local_extremes(data: list[list], window: int = 20) -> dict:
+    """Finner lokale topper og bunner i datasettet."""
+    if len(data) < window * 2:
+        return {"peaks": [], "dips": []}
+    
+    peaks = []
+    dips = []
+    
+    for i in range(window, len(data) - window):
+        if data[i][1] is None:
+            continue
+            
+        window_values = [d[1] for d in data[i-window:i+window] if d[1] is not None]
+        if not window_values:
+            continue
+            
+        current = data[i][1]
+        
+        if current == max(window_values):
+            ts = data[i][0]
+            if isinstance(ts, (int, float)):
+                date_str = datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d')
+            else:
+                date_str = str(ts)
+            peaks.append({"date": date_str, "value": round(current, 2)})
+        
+        elif current == min(window_values):
+            ts = data[i][0]
+            if isinstance(ts, (int, float)):
+                date_str = datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d')
+            else:
+                date_str = str(ts)
+            dips.append({"date": date_str, "value": round(current, 2)})
+    
+    # Begrens til de mest signifikante
+    peaks = sorted(peaks, key=lambda x: x["value"], reverse=True)[:5]
+    dips = sorted(dips, key=lambda x: x["value"])[:5]
+    
+    return {"peaks": peaks, "dips": dips}
+
+
+# ==========================================
+# ENDPOINTS
+# ==========================================
 
 @app.get("/")
 async def root():
@@ -174,20 +230,21 @@ async def root():
     return {
         "status": "running",
         "openai_available": client is not None,
-        "version": "0.1.0"
+        "version": "0.2.0",
+        "mode": "semantic-analysis"
     }
 
 
-@app.post("/analyze", response_model=ChartAnalysisResponse)
-async def analyze_chart(chart_state: ChartStateInput):
+@app.post("/analyze")
+async def analyze_chart(chart_state: ChartStateInput) -> dict[str, Any]:
     """
-    Analyserer chart-data og returnerer forslag til visuelle endringer.
+    Analyserer chart-data og returnerer semantiske funn + deterministiske visualiseringer.
     
-    Args:
-        chart_state: JSON med chart-data fra frontend
-        
-    Returns:
-        ChartAnalysisResponse med annotasjoner, plotBands og tekstlig analyse
+    Flyt:
+    1. Bygg prompt med data (ingen Highcharts-refs)
+    2. LLM analyserer og returnerer semantiske funn
+    3. apply_findings mapper til Highcharts-konfigurasjon
+    4. Returner komplett respons til frontend
     """
     if not client:
         raise HTTPException(
@@ -203,36 +260,35 @@ async def analyze_chart(chart_state: ChartStateInput):
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}
             ],
             response_format={"type": "json_object"},
-            temperature=0.7,
+            temperature=0.5,  # Lavere for mer konsistent output
             max_tokens=2000
         )
         
-        # Parse respons
+        # Parse LLM respons
         raw_response = response.choices[0].message.content
         response_data = json.loads(raw_response)
         
-        # Valider mot schema
+        # Valider mot semantisk schema
         try:
-            validated_response = ChartAnalysisResponse(**response_data)
-            return validated_response
+            analysis = AnalysisResult(**response_data)
         except ValidationError as ve:
-            # Logg valideringsfeil for debugging
             print(f"[WARN] Valideringsfeil fra LLM output: {ve}")
-            
-            # Prøv å reparere vanlige feil
-            repaired = attempt_repair(response_data)
-            if repaired:
-                return ChartAnalysisResponse(**repaired)
-            
-            raise HTTPException(
-                status_code=422,
-                detail=f"LLM returnerte ugyldig format: {str(ve)}"
-            )
-            
+            analysis = attempt_repair(response_data)
+            if not analysis:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"LLM returnerte ugyldig format: {str(ve)}"
+                )
+        
+        # DETERMINISTISK MAPPING: Konverter semantiske funn til Highcharts
+        chart_response = generate_chart_response(analysis)
+        
+        return chart_response
+        
     except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=500,
@@ -245,7 +301,7 @@ async def analyze_chart(chart_state: ChartStateInput):
         )
 
 
-def attempt_repair(data: dict) -> Optional[dict]:
+def attempt_repair(data: dict) -> Optional[AnalysisResult]:
     """
     Forsøker å reparere vanlige feil i LLM output.
     """
@@ -253,51 +309,77 @@ def attempt_repair(data: dict) -> Optional[dict]:
     
     # Sørg for at summary finnes og er lang nok
     if "summary" not in repaired or len(repaired.get("summary", "")) < 50:
-        repaired["summary"] = repaired.get("summary", "") + " " + "Analysen er basert på de tilgjengelige dataene i chartet."
+        repaired["summary"] = repaired.get("summary", "Analysen identifiserte flere mønstre i datasettet. ") + " " + "Basert på de tilgjengelige dataene er det identifisert signifikante trender."
     
-    # Fjern ugyldige annotasjoner
-    if "annotations" in repaired:
-        valid_annotations = []
-        for ann in repaired["annotations"]:
-            if isinstance(ann, dict) and "point" in ann and "text" in ann:
-                point = ann["point"]
-                if isinstance(point, dict) and "x" in point and "y" in point:
-                    valid_annotations.append(ann)
-        repaired["annotations"] = valid_annotations
+    # Filtrer ut ugyldige funn
+    if "findings" in repaired:
+        valid_findings = []
+        for finding in repaired["findings"]:
+            if isinstance(finding, dict) and "type" in finding and "confidence" in finding:
+                # Sørg for at type er gyldig
+                valid_types = [
+                    "BULLISH_TREND", "BEARISH_TREND", "CONSOLIDATION",
+                    "UNUSUAL_PEAK", "UNUSUAL_DIP", "BREAKOUT",
+                    "HIGH_VOLATILITY", "LOW_VOLATILITY",
+                    "SIGNIFICANT_EVENT", "PRICE_GAP",
+                    "SUPPORT_LEVEL", "RESISTANCE_LEVEL",
+                    "DOUBLE_TOP", "DOUBLE_BOTTOM"
+                ]
+                if finding["type"] in valid_types:
+                    valid_findings.append(finding)
+        repaired["findings"] = valid_findings
+    else:
+        repaired["findings"] = []
     
-    # Fjern ugyldige plotBands
-    if "plotBands" in repaired:
-        valid_bands = []
-        for band in repaired["plotBands"]:
-            if isinstance(band, dict) and "from" in band and "to" in band:
-                # Fiks manglende farge
-                if "color" not in band:
-                    band["color"] = "rgba(100, 100, 100, 0.1)"
-                valid_bands.append(band)
-        repaired["plotBands"] = valid_bands
-    
-    # Sett default confidence
-    if "confidence" not in repaired:
-        repaired["confidence"] = 0.7
-    
-    return repaired
+    try:
+        return AnalysisResult(**repaired)
+    except ValidationError:
+        return None
 
 
 @app.post("/test")
 async def test_with_mock():
     """
     Test-endpoint som returnerer mock-data uten LLM-kall.
-    Nyttig for frontend-utvikling og testing.
+    Bruker EXAMPLE_ANALYSIS fra analysis_schema.
     """
-    from schema import EXAMPLE_RESPONSE
-    return EXAMPLE_RESPONSE
+    chart_response = generate_chart_response(EXAMPLE_ANALYSIS)
+    return chart_response
+
+
+@app.get("/schema")
+async def get_schema():
+    """Returnerer JSON-skjemaet for analyse-output."""
+    return ANALYSIS_JSON_SCHEMA
+
+
+@app.get("/finding-types")
+async def get_finding_types():
+    """Returnerer alle tilgjengelige funn-typer."""
+    from analysis_schema import FindingType
+    from visual_presets import (
+        PLOT_BAND_PRESETS,
+        PLOT_LINE_PRESETS,
+        ANNOTATION_PRESETS,
+        LABEL_TEMPLATES
+    )
+    
+    return {
+        "types": [ft.value for ft in FindingType],
+        "period_types": list(PLOT_BAND_PRESETS.keys()),
+        "level_types": list(PLOT_LINE_PRESETS.keys()),
+        "point_types": list(ANNOTATION_PRESETS.keys()),
+        "labels": LABEL_TEMPLATES
+    }
 
 
 if __name__ == "__main__":
     import uvicorn
     
-    print("=== Starter Highcharts LLM Analyzer ===")
+    print("=== Starter Highcharts LLM Analyzer v0.2 ===")
+    print(f"    Mode: Deterministisk semantisk analyse")
     print(f"    OpenAI tilgjengelig: {client is not None}")
     print("    Apne http://localhost:8000/docs for API-dokumentasjon")
+    print("    Apne http://localhost:8000/schema for JSON-skjema")
     
     uvicorn.run(app, host="0.0.0.0", port=8000)

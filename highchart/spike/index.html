@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Highcharts-LLM Analyzer Spike</title>
+    <title>Highcharts-LLM Analyzer v0.2</title>
 
     <!-- Highcharts -->
     <script src="https://code.highcharts.com/highcharts.js"></script>
@@ -68,22 +68,36 @@
             background-clip: text;
         }
 
-        .app-header .badge {
+        .header-badges {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .badge {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             padding: 0.25rem 0.75rem;
             background: var(--bg-elevated);
-            border: 1px solid var(--accent-cyan);
+            border: 1px solid var(--border);
             border-radius: 999px;
+        }
+
+        .badge.semantic {
+            border-color: var(--accent-lime);
+            color: var(--accent-lime);
+        }
+
+        .badge.version {
+            border-color: var(--accent-cyan);
             color: var(--accent-cyan);
         }
 
         .main-container {
             display: grid;
-            grid-template-columns: 1fr 380px;
+            grid-template-columns: 1fr 400px;
             gap: 1.5rem;
             padding: 1.5rem 2rem;
-            max-width: 1800px;
+            max-width: 1900px;
             margin: 0 auto;
         }
 
@@ -121,10 +135,6 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
-        }
-
-        .chart-title .icon {
-            font-size: 1.25rem;
         }
 
         .btn-group {
@@ -208,8 +218,8 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            min-height: 400px;
-            max-height: 600px;
+            min-height: 300px;
+            max-height: 450px;
         }
 
         .chat-messages {
@@ -295,6 +305,18 @@
             color: var(--error);
         }
 
+        .status-value.bullish {
+            color: var(--success);
+        }
+
+        .status-value.bearish {
+            color: var(--error);
+        }
+
+        .status-value.neutral {
+            color: var(--text-secondary);
+        }
+
         .confidence-bar {
             height: 6px;
             background: var(--bg-elevated);
@@ -326,35 +348,109 @@
             }
         }
 
-        .annotations-list {
+        .findings-list {
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
-            max-height: 200px;
+            max-height: 250px;
             overflow-y: auto;
         }
 
-        .annotation-item {
+        .finding-item {
             display: flex;
             align-items: flex-start;
-            gap: 0.5rem;
-            padding: 0.5rem;
+            gap: 0.75rem;
+            padding: 0.75rem;
             background: var(--bg-secondary);
-            border-radius: 6px;
+            border-radius: 8px;
             font-size: 0.8rem;
+            border-left: 3px solid var(--border);
+            transition: all 0.2s ease;
         }
 
-        .annotation-marker {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--accent-cyan);
-            flex-shrink: 0;
-            margin-top: 0.35rem;
+        .finding-item:hover {
+            background: var(--bg-elevated);
         }
 
-        .annotation-text {
+        .finding-item.BULLISH_TREND {
+            border-left-color: var(--success);
+        }
+
+        .finding-item.BEARISH_TREND {
+            border-left-color: var(--error);
+        }
+
+        .finding-item.UNUSUAL_PEAK {
+            border-left-color: #ff00aa;
+        }
+
+        .finding-item.UNUSUAL_DIP {
+            border-left-color: #00aaff;
+        }
+
+        .finding-item.HIGH_VOLATILITY {
+            border-left-color: var(--warning);
+        }
+
+        .finding-item.CONSOLIDATION {
+            border-left-color: var(--text-muted);
+        }
+
+        .finding-item.BREAKOUT {
+            border-left-color: var(--accent-lime);
+        }
+
+        .finding-item.SIGNIFICANT_EVENT {
+            border-left-color: var(--accent-orange);
+        }
+
+        .finding-type {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            padding: 0.2rem 0.5rem;
+            background: var(--bg-primary);
+            border-radius: 4px;
             color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .finding-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .finding-description {
+            color: var(--text-primary);
+            font-size: 0.85rem;
+        }
+
+        .finding-meta {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .finding-confidence {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            background: var(--bg-primary);
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        .confidence-high {
+            color: var(--success);
+        }
+
+        .confidence-medium {
+            color: var(--warning);
+        }
+
+        .confidence-low {
+            color: var(--text-muted);
         }
 
         /* Highcharts tema overrides */
@@ -379,7 +475,10 @@
 <body>
     <header class="app-header">
         <h1>Highcharts-LLM Analyzer</h1>
-        <span class="badge">SPIKE v0.1</span>
+        <div class="header-badges">
+            <span class="badge semantic">SEMANTIC MODE</span>
+            <span class="badge version">v0.2</span>
+        </div>
     </header>
 
     <main class="main-container">
@@ -418,7 +517,15 @@
                         <span class="status-value" id="data-status">Venter...</span>
                     </div>
                     <div class="status-item">
-                        <span class="status-label">LLM Konfidensgrad</span>
+                        <span class="status-label">Overall Trend</span>
+                        <span class="status-value" id="trend-value">—</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Risikovurdering</span>
+                        <span class="status-value" id="risk-value">—</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Konfidensgrad</span>
                         <span class="status-value" id="confidence-value">—</span>
                     </div>
                     <div class="confidence-bar">
@@ -429,13 +536,14 @@
 
             <div class="panel">
                 <div class="panel-header">
-                    <span>🏷️</span> AI-genererte annotasjoner
+                    <span>🔍</span> Semantiske Funn (<span id="findings-count">0</span>)
                 </div>
                 <div class="panel-content">
-                    <div class="annotations-list" id="annotations-list">
-                        <div class="annotation-item">
-                            <div class="annotation-marker" style="background: var(--text-muted)"></div>
-                            <span class="annotation-text">Klikk "Analyser med AI" for å generere</span>
+                    <div class="findings-list" id="findings-list">
+                        <div class="finding-item">
+                            <span class="finding-description" style="color: var(--text-muted)">
+                                Klikk "Analyser med AI" for å identifisere mønstre
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -447,8 +555,8 @@
                 </div>
                 <div class="chat-messages" id="chat-messages">
                     <div class="chat-message system">
-                        Velkommen! Last inn chartet og klikk "Analyser med AI" for å få en intelligent analyse av
-                        aksjedataene.
+                        <strong>Semantic Mode:</strong> LLM returnerer kun semantiske funn.
+                        All visualisering genereres deterministisk fra predefinerte presets.
                     </div>
                 </div>
             </div>
@@ -476,7 +584,7 @@
 
         const TeslaISIN = 'US88160R1014';
 
-        // Eksisterende annotasjoner (fra original koden)
+        // Eksisterende annotasjoner
         const existingAnnotations = [
             { date: '2020-08-20', y: 133.45, text: '5 for 1 Stock split announcement' },
             { date: '2020-12-21', y: 216.62, text: 'Inclusion to S&P 500 Index' },
@@ -499,7 +607,7 @@
                 const response = await fetch(`${API_URL}/`);
                 const data = await response.json();
                 if (data.openai_available) {
-                    statusEl.textContent = 'Tilkoblet ✓';
+                    statusEl.textContent = `Tilkoblet ✓ (${data.mode})`;
                     statusEl.className = 'status-value success';
                 } else {
                     statusEl.textContent = 'Mangler API-nøkkel';
@@ -540,7 +648,6 @@
                 dataStatusEl.textContent = 'Feil ved lasting';
                 dataStatusEl.className = 'status-value error';
 
-                // Fallback til mock-data for testing
                 addChatMessage('Kunne ikke laste Morningstar-data. Bruker mock-data.', 'error');
                 chartData = generateMockData();
                 dataStatusEl.textContent = `${chartData.length} (mock)`;
@@ -564,7 +671,6 @@
         }
 
         function createChart(data) {
-            // Lag annotasjoner i Highcharts-format
             const annotations = [{
                 draggable: '',
                 labelOptions: {
@@ -647,9 +753,8 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="loading-spinner"></span> Analyserer...';
 
-            addChatMessage('Sender chart-data til AI for analyse...', 'system');
+            addChatMessage('Sender data til semantisk analyse...', 'system');
 
-            // Bygg chart-state for API
             const chartState = {
                 seriesData: chartData,
                 title: 'TSLA Stock Price',
@@ -674,18 +779,19 @@
                 }
 
                 const result = await response.json();
+                console.log('Analysis result:', result);
 
-                // Oppdater konfidensgrad
-                updateConfidence(result.confidence || 0.8);
+                // Oppdater status
+                updateStatus(result);
 
-                // Legg til annotasjoner i chartet
-                applyLLMAnnotations(result);
+                // Legg til deterministisk genererte visualiseringer
+                applyLLMVisualizations(result);
 
                 // Vis analyse i chat
                 addChatMessage(result.summary, 'analysis');
 
-                // Oppdater annotasjonsliste
-                updateAnnotationsList(result.annotations || []);
+                // Oppdater funn-listen
+                updateFindingsList(result.findings || []);
 
             } catch (error) {
                 console.error('Analyse feilet:', error);
@@ -696,23 +802,74 @@
             }
         }
 
-        function applyLLMAnnotations(result) {
-            // Fjern tidligere LLM-annotasjoner
+        function updateStatus(result) {
+            // Konfidensgrad
+            const confidence = result.confidence || 0.5;
+            const percent = Math.round(confidence * 100);
+            document.getElementById('confidence-value').textContent = `${percent}%`;
+            document.getElementById('confidence-bar').style.width = `${percent}%`;
+
+            // Overall trend
+            const trendEl = document.getElementById('trend-value');
+            const trend = result.overallTrend || 'neutral';
+            trendEl.textContent = trend.charAt(0).toUpperCase() + trend.slice(1);
+            trendEl.className = `status-value ${trend}`;
+
+            // Risikovurdering
+            const riskEl = document.getElementById('risk-value');
+            const risk = result.riskAssessment || 'medium';
+            riskEl.textContent = risk.charAt(0).toUpperCase() + risk.slice(1);
+            riskEl.className = `status-value ${risk === 'high' ? 'error' : risk === 'low' ? 'success' : 'warning'}`;
+
+            // Funn-telling
+            document.getElementById('findings-count').textContent = result.findingsCount || 0;
+        }
+
+        function applyLLMVisualizations(result) {
+            // Fjern tidligere visualiseringer
             clearLLMAnnotations();
 
-            // Legg til nye annotasjoner
+            // Legg til plotBands (perioder)
+            if (result.plotBands && result.plotBands.length > 0) {
+                result.plotBands.forEach((band, i) => {
+                    const bandId = `llm-plotband-${i}`;
+                    chart.xAxis[0].addPlotBand({
+                        id: bandId,
+                        from: band.from,
+                        to: band.to,
+                        color: band.color,
+                        zIndex: band.zIndex || 1,
+                        label: band.label
+                    });
+                    llmAnnotationIds.push(bandId);
+                });
+            }
+
+            // Legg til plotLines på Y-akse (nivåer)
+            if (result.plotLinesY && result.plotLinesY.length > 0) {
+                result.plotLinesY.forEach((line, i) => {
+                    const lineId = `llm-plotline-y-${i}`;
+                    chart.yAxis[0].addPlotLine({
+                        id: lineId,
+                        value: line.value,
+                        color: line.color,
+                        width: line.width || 2,
+                        dashStyle: line.dashStyle || 'Dash',
+                        zIndex: line.zIndex || 3,
+                        label: line.label
+                    });
+                    llmAnnotationIds.push(lineId);
+                });
+            }
+
+            // Legg til annotations (punkter)
             if (result.annotations && result.annotations.length > 0) {
                 const llmAnnotation = {
                     id: 'llm-annotations',
                     draggable: '',
                     labelOptions: {
                         shape: 'connector',
-                        style: {
-                            fontSize: '10px',
-                            fontWeight: 'bold'
-                        },
-                        backgroundColor: 'rgba(255, 0, 170, 0.8)',
-                        borderColor: '#ff00aa'
+                        style: { fontSize: '10px', fontWeight: 'bold' }
                     },
                     labels: result.annotations.map(ann => ({
                         point: {
@@ -722,50 +879,17 @@
                             y: ann.point.y
                         },
                         text: ann.text,
-                        x: ann.xOffset || -50,
-                        y: ann.yOffset || -30
+                        backgroundColor: ann.backgroundColor,
+                        borderColor: ann.borderColor,
+                        borderRadius: ann.borderRadius || 4,
+                        style: ann.style,
+                        x: ann.x || -50,
+                        y: ann.y || -30
                     }))
                 };
 
                 chart.addAnnotation(llmAnnotation);
                 llmAnnotationIds.push('llm-annotations');
-            }
-
-            // Legg til plotBands
-            if (result.plotBands && result.plotBands.length > 0) {
-                result.plotBands.forEach((band, i) => {
-                    const bandId = `llm-plotband-${i}`;
-                    chart.xAxis[0].addPlotBand({
-                        id: bandId,
-                        from: new Date(band.from).getTime(),
-                        to: new Date(band.to).getTime(),
-                        color: band.color || 'rgba(255, 0, 170, 0.1)',
-                        label: {
-                            text: band.label || '',
-                            style: { color: '#ff00aa', fontSize: '10px' }
-                        }
-                    });
-                    llmAnnotationIds.push(bandId);
-                });
-            }
-
-            // Legg til plotLines
-            if (result.plotLines && result.plotLines.length > 0) {
-                result.plotLines.forEach((line, i) => {
-                    const lineId = `llm-plotline-${i}`;
-                    chart.xAxis[0].addPlotLine({
-                        id: lineId,
-                        value: new Date(line.value).getTime(),
-                        color: line.color || '#ff00aa',
-                        width: line.width || 2,
-                        dashStyle: line.dashStyle || 'Solid',
-                        label: {
-                            text: line.label || '',
-                            style: { color: '#ff00aa', fontSize: '10px' }
-                        }
-                    });
-                    llmAnnotationIds.push(lineId);
-                });
             }
         }
 
@@ -784,6 +908,8 @@
             llmAnnotationIds.forEach(id => {
                 if (id.includes('plotband')) {
                     chart.xAxis[0].removePlotBand(id);
+                } else if (id.includes('plotline-y')) {
+                    chart.yAxis[0].removePlotLine(id);
                 } else if (id.includes('plotline')) {
                     chart.xAxis[0].removePlotLine(id);
                 }
@@ -791,42 +917,70 @@
 
             llmAnnotationIds = [];
 
-            // Reset annotasjonsliste
-            document.getElementById('annotations-list').innerHTML = `
-                <div class="annotation-item">
-                    <div class="annotation-marker" style="background: var(--text-muted)"></div>
-                    <span class="annotation-text">Annotasjoner fjernet</span>
+            // Reset funn-liste
+            document.getElementById('findings-list').innerHTML = `
+                <div class="finding-item">
+                    <span class="finding-description" style="color: var(--text-muted)">
+                        Visualiseringer fjernet
+                    </span>
                 </div>
             `;
+            document.getElementById('findings-count').textContent = '0';
         }
 
-        function updateConfidence(value) {
-            const percent = Math.round(value * 100);
-            document.getElementById('confidence-value').textContent = `${percent}%`;
-            document.getElementById('confidence-bar').style.width = `${percent}%`;
-        }
+        function updateFindingsList(findings) {
+            const container = document.getElementById('findings-list');
 
-        function updateAnnotationsList(annotations) {
-            const container = document.getElementById('annotations-list');
-
-            if (annotations.length === 0) {
+            if (!findings || findings.length === 0) {
                 container.innerHTML = `
-                    <div class="annotation-item">
-                        <div class="annotation-marker" style="background: var(--text-muted)"></div>
-                        <span class="annotation-text">Ingen nye annotasjoner foreslått</span>
+                    <div class="finding-item">
+                        <span class="finding-description" style="color: var(--text-muted)">
+                            Ingen funn identifisert
+                        </span>
                     </div>
                 `;
                 return;
             }
 
-            container.innerHTML = annotations.map(ann => `
-                <div class="annotation-item">
-                    <div class="annotation-marker"></div>
-                    <span class="annotation-text">
-                        <strong>${ann.point.x}</strong>: ${ann.text}
-                    </span>
-                </div>
-            `).join('');
+            container.innerHTML = findings.map(finding => {
+                const confidenceClass = finding.confidence >= 0.85 ? 'confidence-high' :
+                    finding.confidence >= 0.7 ? 'confidence-medium' : 'confidence-low';
+
+                const timeInfo = finding.timeRange
+                    ? `${finding.timeRange[0]} → ${finding.timeRange[1]}`
+                    : finding.pointDate || '';
+
+                return `
+                    <div class="finding-item ${finding.type}">
+                        <div class="finding-content">
+                            <span class="finding-type">${finding.type}</span>
+                            <span class="finding-description">${finding.description || formatFindingType(finding.type)}</span>
+                            ${timeInfo ? `<span class="finding-meta">${timeInfo}</span>` : ''}
+                        </div>
+                        <span class="finding-confidence ${confidenceClass}">${Math.round(finding.confidence * 100)}%</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function formatFindingType(type) {
+            const labels = {
+                'BULLISH_TREND': '📈 Bullish trend',
+                'BEARISH_TREND': '📉 Bearish trend',
+                'CONSOLIDATION': '↔️ Konsolidering',
+                'UNUSUAL_PEAK': '⬆️ Uvanlig topp',
+                'UNUSUAL_DIP': '⬇️ Uvanlig bunn',
+                'BREAKOUT': '🚀 Breakout',
+                'HIGH_VOLATILITY': '⚡ Høy volatilitet',
+                'LOW_VOLATILITY': '〰️ Lav volatilitet',
+                'SIGNIFICANT_EVENT': '⭐ Signifikant hendelse',
+                'PRICE_GAP': '🔲 Prisgap',
+                'SUPPORT_LEVEL': '🟢 Støttenivå',
+                'RESISTANCE_LEVEL': '🔴 Motstandsnivå',
+                'DOUBLE_TOP': '🔻🔻 Dobbel topp',
+                'DOUBLE_BOTTOM': '🔺🔺 Dobbel bunn'
+            };
+            return labels[type] || type;
         }
 
         function addChatMessage(text, type = 'system') {

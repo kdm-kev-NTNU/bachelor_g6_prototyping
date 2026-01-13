@@ -1,6 +1,20 @@
 """
-Pydantic Schema for Highcharts LLM Output
+DEPRECATED: Pydantic Schema for Highcharts LLM Output
 
+⚠️  DETTE SKJEMAET ER UTFASET OG BEHOLDES KUN FOR REFERANSE.
+
+Bruk i stedet:
+- analysis_schema.py: Semantiske funn-typer
+- visual_presets.py: Deterministiske visualiseringspresets
+- apply_findings.py: Mapping fra funn til Highcharts
+
+GRUNN TIL DEPRECATION:
+- LLM skal IKKE returnere Highcharts-spesifikke opsjoner
+- Visualisering skal være deterministisk, ikke AI-generert
+- Separasjon av semantisk analyse og UI-rendering
+
+---
+ORIGINAL BESKRIVELSE:
 Definerer streng kontrakt mellom LLM og Highcharts API.
 Validerer at LLM-output kan mappes direkte til gyldige Highcharts-opsjoner.
 """
