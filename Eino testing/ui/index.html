@@ -421,7 +421,7 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8000';
+        const API_BASE = 'http://localhost:8000/api/v1';
         let currentBuilding = null;
         let currentAdvice = null;
 
@@ -436,7 +436,8 @@
                 buildings.forEach(building => {
                     const option = document.createElement('option');
                     option.value = building.id;
-                    option.textContent = `${building.name} (${building.energy_excess_percent > 0 ? '+' : ''}${building.energy_excess_percent.toFixed(1)}%)`;
+                    const excessPercent = ((building.current_energy_kwh - building.expected_energy_kwh) / building.expected_energy_kwh) * 100;
+                    option.textContent = `${building.name} (${excessPercent > 0 ? '+' : ''}${excessPercent.toFixed(1)}%)`;
                     select.appendChild(option);
                 });
             } catch (error) {
@@ -472,12 +473,14 @@
             document.getElementById('buildingAge').textContent = building.age + ' år';
             document.getElementById('buildingSize').textContent = building.size_m2 + ' m²';
             document.getElementById('buildingType').textContent = building.construction_type;
-            document.getElementById('currentEnergy').textContent = building.current_energy_kwh.toLocaleString();
-            document.getElementById('expectedEnergy').textContent = building.expected_energy_kwh.toLocaleString();
-            document.getElementById('energyExcess').textContent = building.energy_excess_percent.toFixed(1);
+            document.getElementById('currentEnergy').textContent = Math.round(building.current_energy_kwh).toLocaleString();
+            document.getElementById('expectedEnergy').textContent = Math.round(building.expected_energy_kwh).toLocaleString();
             
-            const excessPercent = Math.min(100, (building.energy_excess_percent + 100));
-            document.getElementById('energyBar').style.width = excessPercent + '%';
+            const excessPercent = ((building.current_energy_kwh - building.expected_energy_kwh) / building.expected_energy_kwh) * 100;
+            document.getElementById('energyExcess').textContent = excessPercent.toFixed(1);
+            
+            const barPercent = Math.min(100, Math.max(0, excessPercent + 100));
+            document.getElementById('energyBar').style.width = barPercent + '%';
         }
 
         async function generateAdvice() {
