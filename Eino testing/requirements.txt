@@ -8,13 +8,13 @@ uvicorn>=0.27.0
 openai>=1.0.0
 
 # Vector database
-chromadb>=0.4.0
+chromadb>=0.4.22  # Newer version may have better NumPy compatibility
 
 # PDF processing
-docling>=1.0.0
+pdfplumber>=0.10.0  # Mer stabil enn Docling
 
 # Data processing
-numpy>=1.24.0
+numpy>=1.24.0,<2.0.0  # ChromaDB compatibility - NumPy 2.0 breaks ChromaDB
 pandas>=2.0.0
 
 # Validation

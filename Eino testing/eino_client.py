@@ -4,6 +4,8 @@ Eino platform client for LLM API calls.
 Eino is a Golang-based AI application development framework by CloudWeGo/ByteDance.
 This client provides Python integration for Eino platform.
 
+Can also use OpenAI directly if EINO_API_KEY is set to OpenAI key and EINO_BASE_URL is not set.
+
 Documentation: https://www.cloudwego.io/docs/eino/
 """
 
@@ -14,6 +16,13 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Try importing OpenAI for fallback
+try:
+    from openai import OpenAI as OpenAIClient
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
 
 
 class EinoClient:
@@ -29,20 +38,30 @@ class EinoClient:
         Initialize Eino client.
         
         Args:
-            api_key: Eino API key (from EINO_API_KEY env var if not provided)
+            api_key: Eino/OpenAI API key (from EINO_API_KEY env var if not provided)
             base_url: Eino API base URL (from EINO_BASE_URL env var if not provided)
-                     Default assumes Eino server running locally or configured endpoint
+                     If not set, will use OpenAI directly
         """
-        self.api_key = api_key or os.getenv("EINO_API_KEY")
-        # Default to local Eino server or configured endpoint
-        self.base_url = base_url or os.getenv(
-            "EINO_BASE_URL", 
-            os.getenv("EINO_SERVER_URL", "http://localhost:8080/v1")
-        )
+        self.api_key = api_key or os.getenv("EINO_API_KEY") or os.getenv("OPENAI_API_KEY")
+        self.base_url = base_url or os.getenv("EINO_BASE_URL") or os.getenv("EINO_SERVER_URL")
+        
+        # If no base_url is set, assume we're using OpenAI directly
+        self.use_openai_directly = not self.base_url
         
         if not self.api_key:
-            # API key might be optional if Eino server doesn't require auth
-            print("[WARN] EINO_API_KEY ikke satt - fortsetter uten autentisering")
+            raise ValueError("EINO_API_KEY eller OPENAI_API_KEY må være satt")
+        
+        if self.use_openai_directly:
+            if not OPENAI_AVAILABLE:
+                raise ImportError("OpenAI ikke installert. Installer med: pip install openai")
+            self.openai_client = OpenAIClient(api_key=self.api_key)
+            print("[INFO] Bruker OpenAI direkte (ingen Eino server konfigurert)")
+        else:
+            # Use Eino server
+            self.base_url = self.base_url.rstrip('/')
+            if not self.base_url.endswith('/v1'):
+                self.base_url = f"{self.base_url}/v1"
+            print(f"[INFO] Bruker Eino server: {self.base_url}")
     
     def chat_completion(
         self,
@@ -53,7 +72,7 @@ class EinoClient:
         response_format: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
-        Make chat completion request to Eino platform.
+        Make chat completion request to Eino platform or OpenAI.
         
         Args:
             model: Model name to use
@@ -65,6 +84,33 @@ class EinoClient:
         Returns:
             Response dictionary with 'choices' containing message content
         """
+        # Use OpenAI directly if no Eino server configured
+        if self.use_openai_directly:
+            kwargs = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature
+            }
+            if max_tokens:
+                kwargs["max_tokens"] = max_tokens
+            if response_format:
+                kwargs["response_format"] = response_format
+            
+            response = self.openai_client.chat.completions.create(**kwargs)
+            
+            # Convert to dict format
+            return {
+                "choices": [{
+                    "message": {
+                        "content": response.choices[0].message.content
+                    }
+                }],
+                "usage": {
+                    "total_tokens": response.usage.total_tokens if response.usage else None
+                }
+            }
+        
+        # Use Eino server
         url = f"{self.base_url}/chat/completions"
         
         headers = {
@@ -113,7 +159,7 @@ class EinoClient:
         input_text: str
     ) -> List[float]:
         """
-        Get embeddings from Eino platform.
+        Get embeddings from Eino platform or OpenAI.
         
         Args:
             model: Embedding model name
@@ -122,6 +168,15 @@ class EinoClient:
         Returns:
             List of embedding values
         """
+        # Use OpenAI directly if no Eino server configured
+        if self.use_openai_directly:
+            response = self.openai_client.embeddings.create(
+                model=model,
+                input=input_text
+            )
+            return response.data[0].embedding
+        
+        # Use Eino server
         url = f"{self.base_url}/embeddings"
         
         headers = {

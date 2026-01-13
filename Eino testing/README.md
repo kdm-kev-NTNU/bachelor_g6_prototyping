@@ -25,24 +25,31 @@ cd "Eino testing"
 pip install -r requirements.txt
 ```
 
-### 2. Configure Eino Platform
+**Note**: If you encounter NumPy 2.0 compatibility issues with ChromaDB, ensure NumPy < 2.0.0 is installed:
+```bash
+pip install "numpy>=1.24.0,<2.0.0"
+```
 
-Set environment variables for Eino platform:
+### 2. Configure API Key
+
+Set environment variable for API key (OpenAI or Eino):
 
 ```bash
 # Windows PowerShell
-$env:EINO_API_KEY = "your-eino-api-key"
-$env:EINO_BASE_URL = "http://localhost:8080/v1"  # Or your Eino server URL
+$env:EINO_API_KEY = "your-openai-api-key"  # Can use OpenAI key directly
+
+# For Eino server (optional):
+$env:EINO_BASE_URL = "http://localhost:8080/v1"  # Only if using Eino server
 
 # Linux/Mac
-export EINO_API_KEY="your-eino-api-key"
-export EINO_BASE_URL="http://localhost:8080/v1"
+export EINO_API_KEY="your-openai-api-key"
+export EINO_BASE_URL="http://localhost:8080/v1"  # Optional
 ```
 
-**Note**: Eino is a Golang-based framework. You need either:
-- An Eino server running (configure base URL)
-- Or Eino API gateway endpoint
-- See [Eino Documentation](https://www.cloudwego.io/docs/eino/) for setup
+**Note**: 
+- If `EINO_BASE_URL` is not set, the system will use OpenAI directly
+- If `EINO_BASE_URL` is set, it will use Eino server
+- You can use your OpenAI API key directly: `$env:EINO_API_KEY = "sk-..."`
 
 ### 3. Initialize Vector Database
 
