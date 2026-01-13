@@ -88,10 +88,18 @@ Husk å:
                 max_tokens=1500
             )
             
-            advice_text = response.choices[0].message.content
+            advice_text = response["choices"][0]["message"]["content"]
             
             # Extract citations from advice text
             citations = self._extract_citations(advice_text, retrieved_docs)
+            
+            # Handle usage - can be dict or object
+            tokens_used = None
+            if "usage" in response:
+                if isinstance(response["usage"], dict):
+                    tokens_used = response["usage"].get("total_tokens")
+                else:
+                    tokens_used = response["usage"].total_tokens if response["usage"] else None
             
             return {
                 "advice": advice_text,
@@ -106,7 +114,7 @@ Husk å:
                 ],
                 "metadata": {
                     "model": self.model,
-                    "tokens_used": response.usage.total_tokens if response.usage else None,
+                    "tokens_used": tokens_used,
                     "num_sources": len(retrieved_docs)
                 }
             }

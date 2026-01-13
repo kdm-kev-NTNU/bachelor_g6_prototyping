@@ -59,8 +59,13 @@ class LLMJudge:
                 max_tokens=500
             )
             
-            # Parse response
-            result_json = json.loads(response.choices[0].message.content)
+            # Parse response - handle both dict and object formats
+            if isinstance(response, dict):
+                content = response["choices"][0]["message"]["content"]
+            else:
+                content = response.choices[0].message.content
+            
+            result_json = json.loads(content)
             
             # Validate and create evaluation
             evaluation = JudgeEvaluation(**result_json)
