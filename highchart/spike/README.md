@@ -1,8 +1,8 @@
-# Highcharts-LLM Analyzer v0.2
+# Highcharts-LLM Analyzer v0.3
 
-**Deterministisk Chart-Conditioned Reasoning**
+**Deterministisk Chart-Conditioned Reasoning + Tidsserie-prediksjon**
 
-Prototype for semantisk chart-analyse hvor LLM kun identifiserer mønstre, og all visualisering skjer deterministisk i kode.
+Prototype for semantisk chart-analyse hvor LLM kun identifiserer mønstre, og all visualisering skjer deterministisk i kode. Nå med TimesFM-basert prediksjon og interaktiv chat.
 
 ## 🏗️ Arkitektur
 
@@ -11,12 +11,11 @@ Prototype for semantisk chart-analyse hvor LLM kun identifiserer mønstre, og al
 │ Chart Data  │───▶│ LLM Analyse        │───▶│ Deterministisk  │───▶│ Highcharts│
 │ (Frontend)  │    │ (Semantiske funn)  │    │ Mapping (Kode)  │    │ API       │
 └─────────────┘    └────────────────────┘    └─────────────────┘    └───────────┘
-
-LLM returnerer KUN:              Koden mapper:
-- FindingType enum               - BULLISH_TREND → grønn plotBand
-- confidence (0-1)               - UNUSUAL_PEAK → magenta annotation
-- timeRange/pointDate            - HIGH_VOLATILITY → oransje band
-- description                    - etc. (se visual_presets.py)
+       │
+       │           ┌────────────────────┐    ┌─────────────────┐
+       └──────────▶│ TimesFM Prediksjon │───▶│ Prognose-serie  │───────────┘
+                   │ (eller fallback)   │    │ + Konfidensint. │
+                   └────────────────────┘    └─────────────────┘
 ```
 
 ## 🎯 Kjerneprinsipper
@@ -27,6 +26,7 @@ LLM returnerer KUN:              Koden mapper:
 | **Determinisme** | Samme funn → alltid samme visualisering |
 | **Separasjon** | Analyse-logikk og UI-logikk er fullstendig adskilt |
 | **Strenge enums** | Kun predefinerte FindingTypes aksepteres |
+| **Interaktiv chat** | Still spørsmål om data og få prediksjoner |
 
 ## 📁 Filstruktur
 
@@ -35,10 +35,12 @@ highchart/spike/
 ├── analysis_schema.py    # Semantiske funn-typer + JSON schema
 ├── visual_presets.py     # Deterministiske Highcharts-presets
 ├── apply_findings.py     # Mapper findings → Highcharts config
-├── server.py             # FastAPI backend (v0.2)
-├── index.html            # Frontend med ny respons-håndtering
+├── prediction_service.py # TimesFM wrapper for prediksjoner (NY)
+├── server.py             # FastAPI backend (v0.3)
+├── index.html            # Frontend med chat og prediksjon
 ├── schema.py             # ⚠️ DEPRECATED - kun for referanse
 ├── requirements.txt      # Python-avhengigheter
+├── 101.txt               # Dokumentasjon av dataflyt
 └── README.md             # Denne filen
 ```
 
@@ -69,7 +71,33 @@ Server starter på `http://localhost:8000`
 
 ### 4. Åpne frontend
 
-Åpne `index.html` i nettleser eller bruk Live Server.
+Naviger til `http://localhost:8000` i nettleseren.
+
+## 💬 Chat og Prediksjon
+
+### Prediksjons-spørsmål
+
+Skriv i chatten for å få automatiske prognoser:
+
+- "Hva kan skje neste 30 dager?"
+- "Hvordan ser fremtiden ut de neste 2 ukene?"
+- "Prediksjon for neste måned med bullish scenario"
+- "Hva skjer hvis markedet blir bearish?"
+
+### Scenarioer
+
+| Scenario | Effekt |
+|----------|--------|
+| `bullish` | Øker trenden med 20% |
+| `bearish` | Reduserer trenden med 20% |
+| `volatile` | Legger til høyere volatilitet |
+
+### Visualisering
+
+Prognoser vises på chartet som:
+- **Stiplet oransje linje** - Hovedprediksjon
+- **Oransje skyggefelt** - 95% konfidensintervall
+- **Vertikal markør** - Skille mellom historikk og prognose
 
 ## 🔍 Finding Types (Semantiske Funn)
 
@@ -93,36 +121,53 @@ Server starter på `http://localhost:8000`
 
 | Endepunkt | Metode | Beskrivelse |
 |-----------|--------|-------------|
-| `/` | GET | Helse-sjekk + modus-info |
+| `/` | GET | Serve frontend HTML |
+| `/health` | GET | Helse-sjekk + modus-info |
 | `/analyze` | POST | Semantisk analyse → deterministisk output |
+| `/chat` | POST | Interaktiv chat med automatisk prediksjon |
+| `/predict` | POST | Direkte tidsserie-prediksjon |
 | `/test` | POST | Mock-data uten LLM-kall |
 | `/schema` | GET | JSON-skjema for analyse |
 | `/finding-types` | GET | Liste over alle funn-typer |
 | `/docs` | GET | Swagger API-dokumentasjon |
 
-## 📊 Respons-format
+## 📊 Chat Respons-format
 
 ```json
 {
-  "findings": [
-    {
-      "type": "BULLISH_TREND",
-      "confidence": 0.88,
-      "timeRange": ["2024-11-01", "2024-12-31"],
-      "description": "Sterk oppgang etter valget"
+  "response": "Prognosen viser en mulig oppgang på 15%...",
+  "hasPrediction": true,
+  "predictionData": {
+    "predictions": [[1704067200000, 250.5], ...],
+    "confidenceRange": [[1704067200000, 220.0, 280.0], ...],
+    "metadata": {
+      "method": "timesfm",
+      "horizon": 30,
+      "frequency": "D"
+    },
+    "analysis": {
+      "insights": ["Forventet oppgang på 15%", ...],
+      "stats": {
+        "historical_mean": 200.5,
+        "predicted_mean": 230.2,
+        "change_percent": 14.8
+      }
     }
-  ],
-  "summary": "Tekstlig analyse...",
-  "overallTrend": "bullish",
-  "riskAssessment": "medium",
-  
-  // Deterministisk generert fra findings:
-  "plotBands": [...],
-  "plotLinesY": [...],
-  "annotations": [...],
-  "confidence": 0.85,
-  "findingsCount": 5
+  }
 }
+```
+
+## 🔮 Prediksjon API
+
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "seriesData": [[1704067200000, 100], [1704153600000, 102], ...],
+    "horizon": 30,
+    "frequency": "D",
+    "scenario": "bullish"
+  }'
 ```
 
 ## 🎨 Tilpasse Visualiseringer
@@ -139,15 +184,14 @@ ANNOTATION_PRESETS["UNUSUAL_PEAK"]["background_color"] = "#ff00ff"
 
 **Ingen endringer i LLM-prompts påvirker visualiseringen!**
 
-## ⚡ Forskjell fra v0.1
+## ⚡ Forskjell fra tidligere versjoner
 
-| v0.1 (Gammel) | v0.2 (Ny) |
-|---------------|-----------|
-| LLM returnerer `annotations`, `plotBands` | LLM returnerer `FindingType` enums |
-| LLM velger farger og offsets | Farger/styling er hardkodet i presets |
-| Highcharts-referanser i prompt | Ingen Highcharts i prompt |
-| Ustabil output-format | Strengt JSON schema |
-| `schema.py` med Highcharts-typer | `analysis_schema.py` med semantiske typer |
+| v0.1 | v0.2 | v0.3 (Nå) |
+|------|------|-----------|
+| LLM returnerer Highcharts | LLM returnerer FindingType | + Tidsserie-prediksjon |
+| Ustabil output | Strengt JSON schema | + Interaktiv chat |
+| - | - | + TimesFM / fallback |
+| - | - | + Scenario-støtte |
 
 ## 🛠️ Feilsøking
 
@@ -162,6 +206,10 @@ ANNOTATION_PRESETS["UNUSUAL_PEAK"]["background_color"] = "#ff00ff"
 - Backend har automatisk reparasjon av vanlige feil
 - Sjekk `/schema` for forventet format
 
+**TimesFM ikke tilgjengelig:**
+- Fallback til sesongbasert prediksjon brukes automatisk
+- For full TimesFM: `pip install timesfm huggingface_hub`
+
 **CORS-feil:**
 - Backend må kjøre på port 8000
 - Frontend må bruke `http://localhost:8000` som API_URL
@@ -169,7 +217,8 @@ ANNOTATION_PRESETS["UNUSUAL_PEAK"]["background_color"] = "#ff00ff"
 ## 📝 Neste steg
 
 - [ ] Støtte for flere serier (multi-series charts)
-- [ ] Historikk av analyser
+- [ ] Historikk av analyser og prediksjoner
 - [ ] Eksport av funn til rapport
 - [ ] Konfidensgrad-filtrering i UI
 - [ ] Custom funn-typer via konfigurasjon
+- [ ] Sammenligning av scenarioer

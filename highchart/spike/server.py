@@ -10,7 +10,7 @@ REFAKTORERT: Deterministisk Chart-Conditioned Reasoning
 import os
 import json
 from datetime import datetime
-from typing import Optional, Any
+from typing import Optional, Any, Tuple
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -368,9 +368,85 @@ class ChatMessage(BaseModel):
         alias="chartContext",
         description="Kontekst fra chartet for mer relevant respons"
     )
+    series_data: Optional[list[list]] = Field(
+        default=None,
+        alias="seriesData",
+        description="Chart-data for prediksjon (valgfritt)"
+    )
     
     class Config:
         populate_by_name = True
+
+
+# Nøkkelord for å oppdage prediksjons-spørsmål
+PREDICTION_KEYWORDS = [
+    "hva skjer", "hva kan skje", "fremtid", "fremover", "prediksjon", 
+    "prognose", "forutsi", "spå", "neste", "om en", "om to",
+    "kommer til", "vil", "kan", "mulig", "forecast", "predict"
+]
+
+# Nøkkelord for scenarioer
+SCENARIO_KEYWORDS = {
+    "bullish": ["oppgang", "øker", "stiger", "positiv", "bullish", "vekst"],
+    "bearish": ["nedgang", "synker", "faller", "negativ", "bearish", "krasj"],
+    "volatile": ["volatil", "svinger", "usikker", "ustabil"]
+}
+
+
+def detect_prediction_intent(message: str) -> Tuple[bool, Optional[int], Optional[str]]:
+    """
+    Oppdager om meldingen er et prediksjons-spørsmål.
+    
+    Returns:
+        Tuple av (is_prediction, horizon_days, scenario)
+    """
+    message_lower = message.lower()
+    
+    # Sjekk om det er et prediksjons-spørsmål
+    is_prediction = any(kw in message_lower for kw in PREDICTION_KEYWORDS)
+    
+    if not is_prediction:
+        return False, None, None
+    
+    # Forsøk å ekstrahere tidshorisont
+    horizon = extract_horizon(message_lower)
+    
+    # Forsøk å oppdage scenario
+    scenario = None
+    for scenario_name, keywords in SCENARIO_KEYWORDS.items():
+        if any(kw in message_lower for kw in keywords):
+            scenario = scenario_name
+            break
+    
+    return True, horizon, scenario
+
+
+def extract_horizon(message: str) -> int:
+    """Ekstraher tidshorisont fra melding."""
+    import re
+    
+    # Mønstre for tidsekstraksjon
+    patterns = [
+        (r'(\d+)\s*dag', 1),           # "30 dager"
+        (r'(\d+)\s*uke', 7),            # "2 uker"
+        (r'(\d+)\s*måned', 30),         # "3 måneder"
+        (r'en\s+uke', 7),               # "en uke"
+        (r'to\s+uker?', 14),            # "to uker"
+        (r'en\s+måned', 30),            # "en måned"
+        (r'to\s+måned', 60),            # "to måneder"
+        (r'neste\s+uke', 7),            # "neste uke"
+        (r'neste\s+måned', 30),         # "neste måned"
+    ]
+    
+    for pattern, multiplier in patterns:
+        match = re.search(pattern, message)
+        if match:
+            if match.groups():
+                return int(match.group(1)) * multiplier
+            return multiplier
+    
+    # Default: 30 dager
+    return 30
 
 
 CHAT_SYSTEM_PROMPT = """Du er en intelligent finansanalytiker-assistent som hjelper brukere med å forstå chart-data og analyser.
@@ -400,6 +476,7 @@ Chart-kontekst du kan referere til:
 async def chat_with_assistant(chat_input: ChatMessage) -> dict:
     """
     Chat-endpoint for å stille spørsmål om chartet og analysen.
+    Oppdager automatisk prediksjons-spørsmål og inkluderer prediksjon.
     """
     if not client:
         raise HTTPException(
@@ -407,20 +484,67 @@ async def chat_with_assistant(chat_input: ChatMessage) -> dict:
             detail="OpenAI API ikke tilgjengelig. Sjekk at OPENAI_API_KEY er satt."
         )
     
+    # Oppdage prediksjons-intent
+    is_prediction, horizon, scenario = detect_prediction_intent(chat_input.message)
+    
+    # Hvis det er et prediksjons-spørsmål og vi har data
+    prediction_data = None
+    if is_prediction and chat_input.series_data:
+        try:
+            service = get_prediction_service()
+            prediction_result = service.predict_from_chart_data(
+                series_data=chat_input.series_data,
+                forecast_horizon=horizon or 30,
+                frequency="D",
+                scenario=scenario
+            )
+            
+            if prediction_result.get("success"):
+                analysis = service.analyze_prediction(
+                    chat_input.series_data, 
+                    prediction_result
+                )
+                prediction_data = {
+                    "predictions": prediction_result.get("predictions", []),
+                    "confidenceRange": prediction_result.get("confidenceRange", []),
+                    "metadata": prediction_result.get("metadata", {}),
+                    "analysis": analysis,
+                    "horizon": horizon or 30,
+                    "scenario": scenario
+                }
+        except Exception as e:
+            print(f"[WARN] Prediksjon i chat feilet: {e}")
+    
     # Bygg kontekst fra chart
     context = chat_input.chart_context or {}
     title = context.get("title", "Ukjent chart")
     data_points = context.get("dataPoints", "ukjent")
     time_range = context.get("timeRange", {})
     time_range_str = f"{time_range.get('start', 'N/A')} til {time_range.get('end', 'N/A')}"
-    analysis = context.get("currentAnalysis", "Ingen analyse utført ennå")
+    current_analysis = context.get("currentAnalysis", "Ingen analyse utført ennå")
+    
+    # Legg til prediksjonsinformasjon i system prompt hvis relevant
+    prediction_context = ""
+    if prediction_data:
+        pred_analysis = prediction_data.get("analysis", {})
+        insights = pred_analysis.get("insights", [])
+        stats = pred_analysis.get("stats", {})
+        prediction_context = f"""
+
+PREDIKSJON UTFØRT:
+- Horisont: {prediction_data.get('horizon')} dager
+- Scenario: {prediction_data.get('scenario') or 'standard'}
+- Forventet endring: {stats.get('change_percent', 'N/A')}%
+- Innsikt: {'; '.join(insights[:2]) if insights else 'Ingen'}
+
+Inkluder prediksjonsinformasjonen i svaret ditt."""
     
     system_prompt = CHAT_SYSTEM_PROMPT.format(
         title=title,
         data_points=data_points,
         time_range=time_range_str,
-        analysis=analysis or "Ingen analyse utført"
-    )
+        analysis=current_analysis or "Ingen analyse utført"
+    ) + prediction_context
     
     try:
         response = client.chat.completions.create(
@@ -435,16 +559,168 @@ async def chat_with_assistant(chat_input: ChatMessage) -> dict:
         
         assistant_response = response.choices[0].message.content
         
-        return {
+        result = {
             "response": assistant_response,
-            "tokens_used": response.usage.total_tokens if response.usage else None
+            "tokens_used": response.usage.total_tokens if response.usage else None,
+            "hasPrediction": prediction_data is not None
         }
+        
+        if prediction_data:
+            result["predictionData"] = prediction_data
+        
+        return result
         
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Feil ved chat: {str(e)}"
         )
+
+
+# ==========================================
+# PREDICTION ENDPOINT
+# ==========================================
+
+class PredictionRequest(BaseModel):
+    """Input for prediksjon."""
+    series_data: list[list] = Field(
+        ...,
+        alias="seriesData",
+        description="Tidsseriedata som [[timestamp, value], ...]"
+    )
+    horizon: int = Field(
+        default=30,
+        ge=1,
+        le=365,
+        description="Antall perioder å predikere fremover"
+    )
+    frequency: str = Field(
+        default="D",
+        description="Frekvens: 'D' for daglig, 'H' for time"
+    )
+    scenario: Optional[str] = Field(
+        default=None,
+        description="Scenario: 'bullish', 'bearish', 'volatile'"
+    )
+    
+    class Config:
+        populate_by_name = True
+
+
+# Lazy-load prediction service
+_prediction_service = None
+
+def get_prediction_service():
+    """Lazy-load prediction service."""
+    global _prediction_service
+    if _prediction_service is None:
+        from prediction_service import create_prediction_service
+        _prediction_service = create_prediction_service()
+    return _prediction_service
+
+
+@app.post("/predict")
+async def predict_future(request: PredictionRequest) -> dict:
+    """
+    Prediker fremtidige verdier basert på historiske data.
+    
+    Bruker TimesFM hvis tilgjengelig, ellers fallback til sesongbasert prediksjon.
+    Returnerer data klart for Highcharts visualisering.
+    """
+    service = get_prediction_service()
+    
+    # Kjør prediksjon
+    result = service.predict_from_chart_data(
+        series_data=request.series_data,
+        forecast_horizon=request.horizon,
+        frequency=request.frequency,
+        scenario=request.scenario
+    )
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("metadata", {}).get("error", "Prediksjon feilet")
+        )
+    
+    # Legg til analyse
+    analysis = service.analyze_prediction(request.series_data, result)
+    result["analysis"] = analysis
+    
+    # Generer tekstforklaring med LLM hvis tilgjengelig
+    if client:
+        try:
+            explanation = await generate_prediction_explanation(
+                result, request.scenario
+            )
+            result["explanation"] = explanation
+        except Exception as e:
+            print(f"[WARN] Kunne ikke generere forklaring: {e}")
+            result["explanation"] = format_fallback_explanation(analysis)
+    else:
+        result["explanation"] = format_fallback_explanation(analysis)
+    
+    return result
+
+
+async def generate_prediction_explanation(
+    prediction_result: dict,
+    scenario: Optional[str]
+) -> str:
+    """Generer tekstforklaring av prediksjonen med LLM."""
+    analysis = prediction_result.get("analysis", {})
+    insights = analysis.get("insights", [])
+    stats = analysis.get("stats", {})
+    metadata = prediction_result.get("metadata", {})
+    
+    prompt = f"""Forklar denne prediksjonen på norsk (2-3 setninger):
+
+Metode: {metadata.get('method', 'ukjent')}
+Horisont: {metadata.get('horizon', 'ukjent')} perioder
+Scenario: {scenario or 'standard'}
+
+Statistikk:
+- Historisk snitt: {stats.get('historical_mean', 'N/A')}
+- Predikert snitt: {stats.get('predicted_mean', 'N/A')}
+- Endring: {stats.get('change_percent', 'N/A')}%
+
+Innsikt:
+{chr(10).join('- ' + i for i in insights)}
+
+Vær kort og konkret. Ikke gi investeringsråd."""
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "Du er en finansanalytiker som forklarer prediksjoner på norsk. Vær konsis."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7,
+        max_tokens=200
+    )
+    
+    return response.choices[0].message.content
+
+
+def format_fallback_explanation(analysis: dict) -> str:
+    """Fallback forklaring uten LLM."""
+    insights = analysis.get("insights", [])
+    stats = analysis.get("stats", {})
+    
+    parts = []
+    
+    change = stats.get("change_percent", 0)
+    if change > 0:
+        parts.append(f"Prognosen indikerer en mulig oppgang på {change:.1f}%.")
+    elif change < 0:
+        parts.append(f"Prognosen indikerer en mulig nedgang på {abs(change):.1f}%.")
+    else:
+        parts.append("Prognosen viser relativt stabile verdier.")
+    
+    if insights:
+        parts.append(insights[0])
+    
+    return " ".join(parts)
 
 
 @app.get("/schema")

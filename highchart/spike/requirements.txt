@@ -12,3 +12,11 @@ pydantic>=2.0.0
 
 # Miljøvariabler
 python-dotenv>=1.0.0
+
+# Tidsserie prediksjon
+numpy>=1.24.0
+pandas>=2.0.0
+
+# TimesFM (valgfritt - fallback prediksjon brukes hvis ikke tilgjengelig)
+# timesfm>=1.2.0
+# huggingface_hub>=0.20.0

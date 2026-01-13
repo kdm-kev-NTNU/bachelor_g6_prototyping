@@ -1,19 +1,25 @@
-# Highcharts-LLM Analyzer - Data Prosessering
+# Highcharts-LLM Analyzer v0.3 - Data Prosessering
 
 ## Arkitektur Oversikt
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Frontend   │────▶│   Backend   │────▶│   GPT-4o    │────▶│   Backend   │
-│  (Chart)    │     │ (server.py) │     │   (OpenAI)  │     │(apply_find) │
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-     │                    │                    │                    │
-     │ Rå data           │ Pre-prosessert    │ Semantiske        │ Highcharts
-     │ [[ts, val], ...]  │ prompt            │ funn (JSON)       │ config
+┌─────────────┐     ┌────────────────────┐     ┌─────────────────┐     ┌───────────┐
+│  Frontend   │────▶│   Backend           │────▶│   GPT-4o        │────▶│   Backend  │
+│  (Chart)    │     │ (server.py)         │     │   (OpenAI)      │     │(apply_find)│
+└─────────────┘     └────────────────────┘     └─────────────────┘     └───────────┘
+       │                    │                    │                    │
+       │ Rå data           │ Pre-prosessert    │ Semantiske        │ Highcharts
+       │ [[ts, val], ...]  │ prompt            │ funn (JSON)       │ config
+       │
+       │           ┌────────────────────┐     ┌─────────────────┐
+       └──────────▶│ TimesFM Prediksjon │────▶│ Prognose-serie  │───────────┘
+                   │ (prediction_service)│     │ + Konfidensint. │
+                   └────────────────────┘     └─────────────────┘
 ```
 
 ## Steg 1: Frontend → Backend
 
+### Analyse-endepunkt
 Frontend sender chart-data via POST `/analyze`:
 
 ```json
@@ -23,6 +29,34 @@ Frontend sender chart-data via POST `/analyze`:
   "timeRange": { "start": "2017-01-01", "end": "2025-03-17" },
   "yAxisLabel": "USD",
   "existingAnnotations": [...]
+}
+```
+
+### Chat-endepunkt
+Frontend sender spørsmål via POST `/chat`:
+
+```json
+{
+  "message": "Hva kan skje neste 30 dager?",
+  "chartContext": {
+    "title": "TSLA Stock Price",
+    "dataPoints": 2048,
+    "timeRange": {"start": "2017-01-01", "end": "2025-03-17"},
+    "currentAnalysis": "Bullish trend identifisert..."
+  },
+  "seriesData": [[1483228800000, 20.15], ...]
+}
+```
+
+### Prediksjon-endepunkt
+Direkte prediksjon via POST `/predict`:
+
+```json
+{
+  "seriesData": [[1483228800000, 20.15], ...],
+  "horizon": 30,
+  "frequency": "D",
+  "scenario": "bullish"
 }
 ```
 
@@ -49,6 +83,26 @@ sampled_data = [data[i] for i in range(0, len(data), step)][:sample_size]
 `find_local_extremes()` identifiserer lokale topper/bunner:
 - Bruker et vindu på 20 punkter
 - Returnerer top 5 peaks og dips
+
+## Steg 2.5: Prediksjon (TimesFM eller fallback)
+
+### TimesFM-prediksjon
+Hvis tilgjengelig brukes Google TimesFM:
+- `prediction_service.py` konverterer data til pandas DataFrame
+- Kjør prediksjon med spesifisert horisont
+- Appliser scenario-modifikasjoner (bullish/bearish/volatile)
+
+### Fallback-prediksjon
+Sesongbasert prediksjon når TimesFM ikke er tilgjengelig:
+- Lineær trend-analyse
+- Sesongmønster-deteksjon (24 timer eller 7 dager)
+- Tilfeldig støy for realisme
+
+### Scenarioer
+Prediksjoner kan modifiseres med scenarioer:
+- `bullish`: Multipliser trend med 1.2
+- `bearish`: Multipliser trend med 0.8
+- `volatile`: Øk standardavvik
 
 ## Steg 3: LLM Analyse (GPT-4o)
 
@@ -116,6 +170,12 @@ Backend mapper semantiske funn til Highcharts-konfigurasjon:
 | UNUSUAL_PEAK    | annotation (punkt)      | `ANNOTATION_PRESETS`  |
 | SUPPORT_LEVEL   | plotLine (horisontal)   | `PLOT_LINE_PRESETS`   |
 
+### Prediksjon-visualisering
+Prognoser vises som:
+- **Stiplet oransje linje** - Hovedprediksjon
+- **To stiplete linjer** - Øvre/nedre konfidensgrense
+- **Vertikal markør** - Skille mellom historikk og prognose
+
 ### Eksempel mapping:
 
 ```python
@@ -139,18 +199,64 @@ finding = {
 
 ## Hvorfor denne arkitekturen?
 
+### Kjerneprinsipper
 1. **Deterministisk**: Samme funn → alltid samme visualisering
 2. **Kontrollert**: LLM kan ikke injisere vilkårlig Highcharts-kode
 3. **Vedlikeholdbar**: Visuelle presets definert på ett sted
 4. **Token-effektiv**: Pre-beregnet statistikk reduserer LLM-arbeid
+5. **Interaktiv**: Naturlig språk-grensesnitt for prediksjoner
+
+### Forbedringer i v0.3
+- **TimesFM-integrasjon**: State-of-the-art tidsserie-prediksjon
+- **Chat-grensesnitt**: Automatisk prediksjons-deteksjon fra naturlig språk
+- **Scenario-støtte**: "Hva hvis"-analyser (bullish/bearish/volatile)
+- **Fallback-system**: Fungerer uten TimesFM eller OpenAI API
+- **Robust visualisering**: Ingen ekstra Highcharts-moduler kreves
 
 ## Filstruktur
 
 ```
 spike/
-├── server.py           # API + pre-prosessering
-├── analysis_schema.py  # LLM input/output skjemaer
-├── apply_findings.py   # Funn → Highcharts mapping
-├── visual_presets.py   # Farge/stil-presets
-└── index.html          # Frontend
+├── server.py             # API + pre-prosessering + chat
+├── prediction_service.py # TimesFM wrapper (NY)
+├── analysis_schema.py    # LLM input/output skjemaer
+├── apply_findings.py     # Funn → Highcharts mapping
+├── visual_presets.py     # Farge/stil-presets
+├── index.html            # Frontend med chat og prediksjon
+├── 101.txt               # Denne dokumentasjonen
+└── README.md             # Bruker-dokumentasjon
+```
+
+## API Endepunkter v0.3
+
+| Endepunkt | Metode | Beskrivelse |
+|-----------|--------|-------------|
+| `/` | GET | Serve frontend HTML |
+| `/health` | GET | Helse-sjekk + modus-info |
+| `/analyze` | POST | Semantisk analyse → deterministisk output |
+| `/chat` | POST | Interaktiv chat med automatisk prediksjon |
+| `/predict` | POST | Direkte tidsserie-prediksjon |
+| `/schema` | GET | JSON-skjema for analyse |
+| `/finding-types` | GET | Liste over alle funn-typer |
+
+## Chat-funksjonalitet
+
+### Intent-deteksjon
+Backend analyserer naturlig språk for prediksjons-intent:
+- **Nøkkelord**: "hva skjer", "fremtid", "prediksjon", "prognose", "hvis"
+- **Tidsekstraksjon**: "neste 30 dager", "2 uker", "en måned"
+- **Scenarioer**: "bullish", "bearish", "volatile"
+
+### Respons-format
+```json
+{
+  "response": "Prognosen viser en mulig oppgang på 15%...",
+  "hasPrediction": true,
+  "predictionData": {
+    "predictions": [[ts, val], ...],
+    "confidenceRange": [[ts, low, high], ...],
+    "metadata": {"method": "timesfm", "horizon": 30},
+    "analysis": {...}
+  }
+}
 ```

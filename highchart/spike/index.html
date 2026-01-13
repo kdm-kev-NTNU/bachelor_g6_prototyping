@@ -331,6 +331,28 @@
             border: 1px dashed var(--border);
         }
 
+        .chat-message.prediction .message-content {
+            background: linear-gradient(135deg, rgba(255, 107, 53, 0.12), rgba(255, 170, 0, 0.08));
+            border: 1px solid rgba(255, 107, 53, 0.4);
+        }
+
+        .chat-message.prediction .message-avatar {
+            background: linear-gradient(135deg, #ff6b35, #ffaa00);
+            color: var(--bg-primary);
+        }
+
+        .prediction-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            background: rgba(255, 107, 53, 0.2);
+            border-radius: 4px;
+            color: #ff6b35;
+            margin-bottom: 0.5rem;
+        }
+
         .typing-indicator {
             display: flex;
             gap: 4px;
@@ -688,8 +710,8 @@
                         TSLA Stock Price (Morningstar Data)
                     </div>
                     <div class="btn-group">
-                        <button class="btn btn-secondary" onclick="clearLLMAnnotations()">
-                            🗑️ Fjern AI-analyser
+                        <button class="btn btn-secondary" onclick="clearAllVisualizations()">
+                            🗑️ Fjern visualiseringer
                         </button>
                         <button class="btn btn-primary" id="analyze-btn" onclick="analyzeChart()">
                             🤖 Analyser med AI
@@ -761,10 +783,10 @@
                     </div>
                 </div>
                 <div class="quick-actions" id="quick-actions">
-                    <button class="quick-btn" onclick="askQuickQuestion('Hva er hovedtrenden i dataene?')">📈
-                        Hovedtrend</button>
+                    <button class="quick-btn" onclick="askQuickQuestion('Hva kan skje neste 30 dager?')">🔮
+                        Prognose</button>
+                    <button class="quick-btn" onclick="askQuickQuestion('Hva er hovedtrenden?')">📈 Trend</button>
                     <button class="quick-btn" onclick="askQuickQuestion('Forklar volatiliteten')">⚡ Volatilitet</button>
-                    <button class="quick-btn" onclick="askQuickQuestion('Hva betyr funnene?')">🔍 Forklaring</button>
                 </div>
                 <div class="chat-input-container">
                     <input type="text" id="chat-input" class="chat-input" placeholder="Still et spørsmål om chartet..."
@@ -1221,6 +1243,9 @@
             } else if (type === 'assistant' || type === 'analysis') {
                 avatar.textContent = '🤖';
                 content.innerHTML = formatMessageContent(text);
+            } else if (type === 'prediction') {
+                avatar.textContent = '📊';
+                content.innerHTML = '<div class="prediction-badge">🔮 PROGNOSE</div>' + formatMessageContent(text);
             } else if (type === 'loading') {
                 avatar.textContent = '🤖';
                 content.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
@@ -1289,7 +1314,8 @@
                                 end: '2025-03-17'
                             },
                             currentAnalysis: getLastAnalysisSummary()
-                        }
+                        },
+                        seriesData: chartData  // Inkluder data for prediksjon
                     })
                 });
 
@@ -1301,7 +1327,19 @@
                 }
 
                 const result = await response.json();
-                addChatMessage(result.response, 'assistant');
+
+                // Sjekk om responsen inneholder prediksjon
+                if (result.hasPrediction && result.predictionData) {
+                    try {
+                        addPredictionSeries(result.predictionData);
+                        addChatMessage(result.response, 'prediction');
+                    } catch (error) {
+                        console.error('Error adding prediction series:', error);
+                        addChatMessage(result.response + '\n\n(Kunne ikke vise prognose på chartet)', 'assistant');
+                    }
+                } else {
+                    addChatMessage(result.response, 'assistant');
+                }
 
             } catch (error) {
                 removeLoadingMessage();
@@ -1311,6 +1349,140 @@
                 sendBtn.disabled = false;
                 input.focus();
             }
+        }
+
+        // ==========================================
+        // PREDIKSJON VISUALISERING
+        // ==========================================
+
+        let predictionSeriesIds = [];
+
+        function addPredictionSeries(predictionData) {
+            if (!chart || !predictionData) return;
+
+            console.log('Adding prediction series:', predictionData);
+
+            // Fjern eksisterende prediksjoner først
+            clearPredictionSeries();
+
+            const predictions = predictionData.predictions || [];
+            const confidenceRange = predictionData.confidenceRange || [];
+
+            if (predictions.length === 0) return;
+
+            // Legg til konfidensintervall først (som linjer på Y-aksen)
+            if (confidenceRange.length > 0) {
+                // Legg til upper bound linje
+                const upperData = confidenceRange.map(range => [range[0], range[2]]);
+                const lowerData = confidenceRange.map(range => [range[0], range[1]]);
+
+                chart.addSeries({
+                    id: 'prediction-upper',
+                    name: 'Øvre konfidensgrense',
+                    data: upperData,
+                    color: 'rgba(255, 107, 53, 0.5)',
+                    dashStyle: 'Dot',
+                    lineWidth: 1,
+                    marker: { enabled: false },
+                    enableMouseTracking: false,
+                    showInLegend: false,
+                    zIndex: 1
+                });
+                predictionSeriesIds.push('prediction-upper');
+
+                chart.addSeries({
+                    id: 'prediction-lower',
+                    name: 'Nedre konfidensgrense',
+                    data: lowerData,
+                    color: 'rgba(255, 107, 53, 0.5)',
+                    dashStyle: 'Dot',
+                    lineWidth: 1,
+                    marker: { enabled: false },
+                    enableMouseTracking: false,
+                    showInLegend: false,
+                    zIndex: 1
+                });
+                predictionSeriesIds.push('prediction-lower');
+            }
+
+            // Legg til hovedprediksjonslinje
+            chart.addSeries({
+                id: 'prediction-series',
+                name: 'Prognose',
+                data: predictions,
+                color: '#ff6b35',
+                dashStyle: 'ShortDash',
+                lineWidth: 2,
+                marker: {
+                    enabled: false,
+                    symbol: 'circle',
+                    radius: 3
+                },
+                zIndex: 2,
+                tooltip: {
+                    pointFormat: '<span style="color:#ff6b35">●</span> Prognose: <b>{point.y:.2f} USD</b><br/>'
+                }
+            });
+            predictionSeriesIds.push('prediction-series');
+
+            // Legg til vertikal linje for å markere prediksjonsstart
+            const firstPrediction = predictions[0];
+            if (firstPrediction) {
+                chart.xAxis[0].addPlotLine({
+                    id: 'prediction-start-line',
+                    value: firstPrediction[0],
+                    color: '#ff6b35',
+                    width: 2,
+                    dashStyle: 'Dot',
+                    zIndex: 3,
+                    label: {
+                        text: '📊 Prognose',
+                        style: {
+                            color: '#ff6b35',
+                            fontSize: '10px',
+                            fontWeight: 'bold'
+                        },
+                        rotation: 0,
+                        y: 15
+                    }
+                });
+                predictionSeriesIds.push('prediction-start-line');
+            }
+
+            // Vis metadata
+            const metadata = predictionData.metadata || {};
+            const analysis = predictionData.analysis || {};
+            console.log('Prediksjon lagt til:', {
+                method: metadata.method,
+                horizon: metadata.horizon,
+                dataPoints: predictions.length,
+                insights: analysis.insights
+            });
+        }
+
+        function clearPredictionSeries() {
+            if (!chart) return;
+
+            predictionSeriesIds.forEach(id => {
+                // Fjern serier
+                const series = chart.get(id);
+                if (series) {
+                    series.remove(false);
+                }
+
+                // Fjern plotLines
+                if (id === 'prediction-start-line') {
+                    chart.xAxis[0].removePlotLine(id);
+                }
+            });
+
+            predictionSeriesIds = [];
+            chart.redraw();
+        }
+
+        function clearAllVisualizations() {
+            clearLLMAnnotations();
+            clearPredictionSeries();
         }
 
         function getLastAnalysisSummary() {
