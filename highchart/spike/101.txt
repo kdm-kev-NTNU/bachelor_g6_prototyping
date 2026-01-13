@@ -1,0 +1,156 @@
+# Highcharts-LLM Analyzer - Data Prosessering
+
+## Arkitektur Oversikt
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Frontend   │────▶│   Backend   │────▶│   GPT-4o    │────▶│   Backend   │
+│  (Chart)    │     │ (server.py) │     │   (OpenAI)  │     │(apply_find) │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+     │                    │                    │                    │
+     │ Rå data           │ Pre-prosessert    │ Semantiske        │ Highcharts
+     │ [[ts, val], ...]  │ prompt            │ funn (JSON)       │ config
+```
+
+## Steg 1: Frontend → Backend
+
+Frontend sender chart-data via POST `/analyze`:
+
+```json
+{
+  "seriesData": [[1483228800000, 20.15], [1483315200000, 21.03], ...],
+  "title": "TSLA Stock Price",
+  "timeRange": { "start": "2017-01-01", "end": "2025-03-17" },
+  "yAxisLabel": "USD",
+  "existingAnnotations": [...]
+}
+```
+
+## Steg 2: Backend Pre-prosessering (server.py)
+
+### Statistikk-beregning
+Python beregner nøkkelstatistikk FØR LLM-kall:
+
+- `total_points`: Antall datapunkter (f.eks. 2048)
+- `min_value`, `max_value`: Prisekstremer
+- `start_value`, `end_value`: Start/slutt-verdier
+- `change_percent`: Prosentvis endring over perioden
+- `avg_value`: Gjennomsnittspris
+- `volatility`: (max - min) / avg * 100
+
+### Sampling
+For å spare tokens sampels ~100 punkter fra datasettet:
+```python
+step = len(data) // sample_size
+sampled_data = [data[i] for i in range(0, len(data), step)][:sample_size]
+```
+
+### Ekstrempunkt-deteksjon
+`find_local_extremes()` identifiserer lokale topper/bunner:
+- Bruker et vindu på 20 punkter
+- Returnerer top 5 peaks og dips
+
+## Steg 3: LLM Analyse (GPT-4o)
+
+LLM-en mottar en strukturert prompt:
+
+```
+DATASETT INFO:
+- Tittel: TSLA Stock Price
+- Periode: 2017-01-01 til 2025-03-17
+- Måleenhet: USD
+
+STATISTIKK:
+{
+  "total_points": 2048,
+  "min_value": 19.33,
+  "max_value": 402.86,
+  "change_percent": 1147.52,
+  ...
+}
+
+IDENTIFISERTE EKSTREMPUNKTER:
+{
+  "peaks": [...],
+  "dips": [...]
+}
+
+DATA (samplet):
+2017-01-03: 20.15
+2017-01-24: 21.03
+...
+```
+
+### LLM Output (Kun semantiske funn!)
+
+```json
+{
+  "findings": [
+    {
+      "type": "BULLISH_TREND",
+      "confidence": 0.88,
+      "timeRange": ["2024-11-01", "2024-12-31"],
+      "description": "Sterk oppgang etter valget"
+    },
+    {
+      "type": "UNUSUAL_PEAK",
+      "confidence": 0.92,
+      "pointDate": "2021-11-04",
+      "pointValue": 402.86
+    }
+  ],
+  "summary": "Analysen viser at TSLA har hatt...",
+  "overallTrend": "bullish",
+  "riskAssessment": "medium"
+}
+```
+
+## Steg 4: Deterministisk Visualisering (apply_findings.py)
+
+Backend mapper semantiske funn til Highcharts-konfigurasjon:
+
+| Funn-type       | Highcharts Element      | Preset                |
+|-----------------|-------------------------|-----------------------|
+| BULLISH_TREND   | plotBand (grønn)        | `PLOT_BAND_PRESETS`   |
+| BEARISH_TREND   | plotBand (rød)          | `PLOT_BAND_PRESETS`   |
+| UNUSUAL_PEAK    | annotation (punkt)      | `ANNOTATION_PRESETS`  |
+| SUPPORT_LEVEL   | plotLine (horisontal)   | `PLOT_LINE_PRESETS`   |
+
+### Eksempel mapping:
+
+```python
+# Input: semantisk funn
+finding = {
+    "type": "BULLISH_TREND",
+    "timeRange": ["2024-11-01", "2024-12-31"]
+}
+
+# Output: Highcharts plotBand
+{
+    "from": 1730419200000,
+    "to": 1735689600000,
+    "color": "rgba(0, 255, 136, 0.15)",
+    "label": {
+        "text": "📈 Bullish",
+        "style": {"color": "#00ff88"}
+    }
+}
+```
+
+## Hvorfor denne arkitekturen?
+
+1. **Deterministisk**: Samme funn → alltid samme visualisering
+2. **Kontrollert**: LLM kan ikke injisere vilkårlig Highcharts-kode
+3. **Vedlikeholdbar**: Visuelle presets definert på ett sted
+4. **Token-effektiv**: Pre-beregnet statistikk reduserer LLM-arbeid
+
+## Filstruktur
+
+```
+spike/
+├── server.py           # API + pre-prosessering
+├── analysis_schema.py  # LLM input/output skjemaer
+├── apply_findings.py   # Funn → Highcharts mapping
+├── visual_presets.py   # Farge/stil-presets
+└── index.html          # Frontend
+```
