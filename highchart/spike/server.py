@@ -14,6 +14,8 @@ from typing import Optional, Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ValidationError
 from dotenv import load_dotenv
 
@@ -225,7 +227,14 @@ def find_local_extremes(data: list[list], window: int = 20) -> dict:
 # ==========================================
 
 @app.get("/")
-async def root():
+async def serve_index():
+    """Serve frontend HTML."""
+    import os
+    return FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
+
+
+@app.get("/health")
+async def health_check():
     """Helse-sjekk endpoint."""
     return {
         "status": "running",
@@ -345,6 +354,97 @@ async def test_with_mock():
     """
     chart_response = generate_chart_response(EXAMPLE_ANALYSIS)
     return chart_response
+
+
+# ==========================================
+# CHAT ENDPOINT
+# ==========================================
+
+class ChatMessage(BaseModel):
+    """Input for chat-meldinger fra bruker."""
+    message: str = Field(..., min_length=1, max_length=1000)
+    chart_context: Optional[dict] = Field(
+        default=None,
+        alias="chartContext",
+        description="Kontekst fra chartet for mer relevant respons"
+    )
+    
+    class Config:
+        populate_by_name = True
+
+
+CHAT_SYSTEM_PROMPT = """Du er en intelligent finansanalytiker-assistent som hjelper brukere med å forstå chart-data og analyser.
+
+Din oppgave er å:
+- Svare på spørsmål om chart-dataene og trender
+- Forklare tekniske konsepter på en forståelig måte
+- Gi kontekst til analysefunn
+- Hjelpe brukeren å forstå markedsmønstre
+
+REGLER:
+1. Svar alltid på norsk
+2. Vær konsis men informativ (maks 2-3 avsnitt)
+3. Bruk **bold** for viktige tall og begreper
+4. Referer til chart-konteksten når relevant
+5. Ikke gi investeringsråd - bare analyser og forklaringer
+6. Vær vennlig og hjelpsom
+
+Chart-kontekst du kan referere til:
+- Tittel: {title}
+- Antall datapunkter: {data_points}
+- Tidsperiode: {time_range}
+- Siste analyse: {analysis}"""
+
+
+@app.post("/chat")
+async def chat_with_assistant(chat_input: ChatMessage) -> dict:
+    """
+    Chat-endpoint for å stille spørsmål om chartet og analysen.
+    """
+    if not client:
+        raise HTTPException(
+            status_code=503,
+            detail="OpenAI API ikke tilgjengelig. Sjekk at OPENAI_API_KEY er satt."
+        )
+    
+    # Bygg kontekst fra chart
+    context = chat_input.chart_context or {}
+    title = context.get("title", "Ukjent chart")
+    data_points = context.get("dataPoints", "ukjent")
+    time_range = context.get("timeRange", {})
+    time_range_str = f"{time_range.get('start', 'N/A')} til {time_range.get('end', 'N/A')}"
+    analysis = context.get("currentAnalysis", "Ingen analyse utført ennå")
+    
+    system_prompt = CHAT_SYSTEM_PROMPT.format(
+        title=title,
+        data_points=data_points,
+        time_range=time_range_str,
+        analysis=analysis or "Ingen analyse utført"
+    )
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": chat_input.message}
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        assistant_response = response.choices[0].message.content
+        
+        return {
+            "response": assistant_response,
+            "tokens_used": response.usage.total_tokens if response.usage else None
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Feil ved chat: {str(e)}"
+        )
 
 
 @app.get("/schema")
