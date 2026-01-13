@@ -1,54 +1,179 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
-
-	"github.com/chroma-core/chroma/go/pkg/client"
-	"github.com/chroma-core/chroma/go/pkg/config"
-	"github.com/cloudwego/eino/schema"
-	"github.com/cloudwego/eino-ext/components/model/openai"
+	"os/exec"
+	"path/filepath"
 )
 
-var chromaClient *client.Client
 var collectionName = "energy_advice_docs"
 
-func initChromaDB() error {
-	cfg := config.NewDefaultConfig()
-	cfg.ChromaHost = "localhost"
-	cfg.ChromaPort = 8000
+// ChromaDB embedded client via Python
+type chromaClient struct {
+	dbPath string
+}
 
-	var err error
-	chromaClient, err = client.NewClient(cfg)
+func newChromaClient() *chromaClient {
+	dbPath := getChromaPath()
+	// Convert to absolute path
+	absPath, err := filepath.Abs(dbPath)
 	if err != nil {
-		// If ChromaDB is not running, return error but don't fail completely
-		log.Printf("Warning: ChromaDB not available: %v. Will use in-memory storage.", err)
+		log.Printf("Warning: Could not get absolute path for ChromaDB: %v", err)
+		absPath = dbPath
+	}
+	return &chromaClient{
+		dbPath: absPath,
+	}
+}
+
+func (c *chromaClient) init(ctx context.Context) error {
+	scriptPath := filepath.Join(".", "vector_db.py")
+	if _, err := filepath.Abs(scriptPath); err != nil {
+		// Try relative to backend directory
+		scriptPath = "vector_db.py"
+	}
+
+	cmd := exec.CommandContext(ctx, "python", scriptPath, "init", c.dbPath, collectionName)
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("failed to initialize ChromaDB: %s (exit code: %d)", string(exitErr.Stderr), exitErr.ExitCode())
+		}
+		return fmt.Errorf("failed to initialize ChromaDB: %w", err)
+	}
+
+	var result struct {
+		Status     string `json:"status"`
+		Created    bool   `json:"created"`
+		Collection string `json:"collection"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return fmt.Errorf("failed to parse init response: %w", err)
+	}
+
+	if result.Created {
+		log.Printf("Created collection: %s", collectionName)
+	} else {
+		log.Printf("Using existing collection: %s", collectionName)
+	}
+
+	return nil
+}
+
+func (c *chromaClient) add(ctx context.Context, ids []string, embeddings [][]float32, metadatas []map[string]interface{}, documents []string) error {
+	scriptPath := "vector_db.py"
+
+	// Convert float32 to float64 for JSON
+	embeddingsFloat64 := make([][]float64, len(embeddings))
+	for i, emb := range embeddings {
+		embeddingsFloat64[i] = make([]float64, len(emb))
+		for j, val := range emb {
+			embeddingsFloat64[i][j] = float64(val)
+		}
+	}
+
+	payload := map[string]interface{}{
+		"ids":        ids,
+		"embeddings": embeddingsFloat64,
+		"metadatas":  metadatas,
+		"documents":  documents,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
 		return err
 	}
 
-	// Create or get collection
-	_, err = chromaClient.CreateCollection(context.Background(), &client.CreateCollectionParams{
-		Name: collectionName,
-	})
+	cmd := exec.CommandContext(ctx, "python", scriptPath, "add", c.dbPath, collectionName)
+	cmd.Stdin = bytes.NewReader(jsonData)
+	
+	output, err := cmd.Output()
 	if err != nil {
-		// Collection might already exist, try to get it
-		_, err = chromaClient.GetCollection(context.Background(), &client.GetCollectionParams{
-			Name: collectionName,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create/get collection: %w", err)
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("python script failed: %s (exit code: %d)", string(exitErr.Stderr), exitErr.ExitCode())
 		}
-		log.Println("Using existing collection:", collectionName)
-	} else {
-		log.Println("Created collection:", collectionName)
+		return fmt.Errorf("failed to add documents: %w", err)
+	}
+
+	var result struct {
+		Status string `json:"status"`
+		Count  int    `json:"count"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return fmt.Errorf("failed to parse add response: %w", err)
+	}
+
+	return nil
+}
+
+func (c *chromaClient) query(ctx context.Context, queryEmbeddings [][]float32, nResults int) (*chromaQueryResponse, error) {
+	scriptPath := "vector_db.py"
+
+	// Convert float32 to float64 for JSON
+	embeddingsFloat64 := make([][]float64, len(queryEmbeddings))
+	for i, emb := range queryEmbeddings {
+		embeddingsFloat64[i] = make([]float64, len(emb))
+		for j, val := range emb {
+			embeddingsFloat64[i][j] = float64(val)
+		}
+	}
+
+	payload := map[string]interface{}{
+		"query_embeddings": embeddingsFloat64,
+		"n_results":        nResults,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, "python", scriptPath, "query", c.dbPath, collectionName)
+	cmd.Stdin = bytes.NewReader(jsonData)
+	
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("python script failed: %s (exit code: %d)", string(exitErr.Stderr), exitErr.ExitCode())
+		}
+		return nil, fmt.Errorf("failed to query: %w", err)
+	}
+
+	var result chromaQueryResponse
+	if err := json.Unmarshal(output, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse query response: %w", err)
+	}
+
+	return &result, nil
+}
+
+type chromaQueryResponse struct {
+	Ids       [][]string                 `json:"ids"`
+	Documents [][]string                 `json:"documents"`
+	Metadatas [][]map[string]interface{} `json:"metadatas"`
+	Distances [][]float64                `json:"distances"`
+}
+
+var chromaCli *chromaClient
+
+func initChromaDB() error {
+	chromaCli = newChromaClient()
+	ctx := context.Background()
+
+	if err := chromaCli.init(ctx); err != nil {
+		log.Printf("Warning: Failed to initialize ChromaDB: %v", err)
+		return err
 	}
 
 	return nil
 }
 
 func storeChunksInVectorDB(chunks []DocumentChunk) error {
-	if chromaClient == nil {
+	if chromaCli == nil {
 		if err := initChromaDB(); err != nil {
 			return err
 		}
@@ -56,22 +181,13 @@ func storeChunksInVectorDB(chunks []DocumentChunk) error {
 
 	ctx := context.Background()
 
-	// Initialize embedding model
-	embeddingModel, err := openai.NewEmbeddingModel(ctx, &openai.EmbeddingModelConfig{
-		APIKey: getOpenAIKey(),
-		Model:  EmbeddingModel,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create embedding model: %w", err)
-	}
-
-	// Generate embeddings
+	// Generate embeddings using OpenAI API directly
 	texts := make([]string, len(chunks))
 	for i, chunk := range chunks {
 		texts[i] = chunk.Text
 	}
 
-	embeddings, err := embeddingModel.Embed(ctx, texts)
+	embeddings, err := getEmbeddings(ctx, texts)
 	if err != nil {
 		return fmt.Errorf("failed to generate embeddings: %w", err)
 	}
@@ -84,7 +200,7 @@ func storeChunksInVectorDB(chunks []DocumentChunk) error {
 	for i, chunk := range chunks {
 		ids[i] = fmt.Sprintf("%s_chunk_%d", chunk.Metadata["source_file"], chunk.Metadata["chunk_index"])
 		metadatas[i] = chunk.Metadata
-		
+
 		// Convert []float64 to []float32
 		embeddingsFloat[i] = make([]float32, len(embeddings[i]))
 		for j, val := range embeddings[i] {
@@ -93,14 +209,7 @@ func storeChunksInVectorDB(chunks []DocumentChunk) error {
 	}
 
 	// Store in Chroma
-	_, err = chromaClient.Add(context.Background(), &client.AddParams{
-		CollectionName: collectionName,
-		IDs:            ids,
-		Embeddings:     embeddingsFloat,
-		Metadatas:      metadatas,
-		Documents:      texts,
-	})
-	if err != nil {
+	if err := chromaCli.add(ctx, ids, embeddingsFloat, metadatas, texts); err != nil {
 		return fmt.Errorf("failed to store in Chroma: %w", err)
 	}
 
@@ -109,7 +218,7 @@ func storeChunksInVectorDB(chunks []DocumentChunk) error {
 }
 
 func retrieveDocuments(query string, topK int) ([]RetrievedDoc, error) {
-	if chromaClient == nil {
+	if chromaCli == nil {
 		if err := initChromaDB(); err != nil {
 			// Return empty results if ChromaDB not available
 			log.Println("ChromaDB not available, returning empty results")
@@ -119,32 +228,21 @@ func retrieveDocuments(query string, topK int) ([]RetrievedDoc, error) {
 
 	ctx := context.Background()
 
-	// Generate query embedding
-	embeddingModel, err := openai.NewEmbeddingModel(ctx, &openai.EmbeddingModelConfig{
-		APIKey: getOpenAIKey(),
-		Model:  EmbeddingModel,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create embedding model: %w", err)
-	}
-
-	embeddings, err := embeddingModel.Embed(ctx, []string{query})
+	// Generate query embedding using OpenAI API directly
+	embeddings, err := getEmbeddings(ctx, []string{query})
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate query embedding: %w", err)
 	}
 
 	// Convert to float32
-	queryEmbedding := make([]float32, len(embeddings[0]))
+	queryEmbedding := make([][]float32, 1)
+	queryEmbedding[0] = make([]float32, len(embeddings[0]))
 	for i, val := range embeddings[0] {
-		queryEmbedding[i] = float32(val)
+		queryEmbedding[0][i] = float32(val)
 	}
 
 	// Query Chroma
-	results, err := chromaClient.Query(ctx, &client.QueryParams{
-		CollectionName: collectionName,
-		QueryEmbeddings: [][]float32{queryEmbedding},
-		NResults:       topK,
-	})
+	results, err := chromaCli.query(ctx, queryEmbedding, topK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query Chroma: %w", err)
 	}
@@ -152,10 +250,10 @@ func retrieveDocuments(query string, topK int) ([]RetrievedDoc, error) {
 	// Convert to RetrievedDoc format
 	retrievedDocs := []RetrievedDoc{}
 	if len(results.Documents) > 0 && len(results.Documents[0]) > 0 {
-		for i, doc := range results.Documents[0] {
+		for i := range results.Documents[0] {
 			source := "Ukjent kilde"
 			page := "?"
-			
+
 			if len(results.Metadatas) > 0 && len(results.Metadatas[0]) > i {
 				if meta := results.Metadatas[0][i]; meta != nil {
 					if src, ok := meta["source_file"].(string); ok {

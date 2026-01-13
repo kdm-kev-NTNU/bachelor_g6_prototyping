@@ -2,79 +2,95 @@
 
 Komplett Go-basert backend for LLM-as-Judge testing system med Eino framework.
 
-## ⚠️ Viktig: Eksisterende mapper
+## 🚀 Quick Start
 
-Den nye Go-backenden **beholder og bruker** alle eksisterende mapper:
-- ✅ `chroma_db/` - Eksisterende vector database brukes (via ChromaDB-server)
-- ✅ `pdf/` - PDF-filer brukes for dokumentprocessing
-- ✅ `ui/` - Frontend UI brukes (allerede oppdatert)
+```bash
+cd "Eino testing/backend"
 
-Se `MIGRATION.md` for detaljer om migrasjon fra Python til Go backend.
+# Installer avhengigheter
+go mod download
+go mod tidy
+pip install pdfplumber chromadb
 
-## Arkitektur
+# Sett miljøvariabler
+$env:OPENAI_API_KEY = "sk-your-openai-api-key"
+
+# Start serveren
+go run .
+# eller
+go run *.go
+```
+
+Serveren starter på `http://localhost:8000`
+
+## 📁 Prosjektstruktur
 
 ```
-PDF Documents → Python pdfplumber → Text Chunks → Chroma Vector DB
+backend/
+├── main.go              # Server entry point
+├── routes.go            # API route definitions
+├── handlers.go          # HTTP handlers
+├── models.go            # Data structures
+├── config.go            # Configuration and prompts
+├── building_data.go     # Test data generation
+├── pdf_processor.go     # PDF text extraction (via Python)
+├── vector_db.go         # ChromaDB integration (embedded mode)
+├── vector_db.py         # Python wrapper for ChromaDB
+├── advisor.go           # RAG advisor med Eino ChatModel
+├── judge.go             # LLM-as-judge med Eino ChatModel
+├── go.mod               # Go dependencies
+├── requirements.txt     # Python dependencies
+└── README.md            # Denne filen
+```
+
+## 🏗️ Arkitektur
+
+```
+PDF Documents → Python pdfplumber → Text Chunks → ChromaDB (embedded)
                                                           ↓
 Building Data → Hybrid Retrieval → RAG Advisor (Eino) → Advice
                                                           ↓
 Fixed Rubric → LLM-as-Judge (Eino) → Evaluation Scores
 ```
 
-## Komponenter
+## ⚙️ Installasjon
 
-- **PDF Processing**: Python pdfplumber (kalt fra Go) for PDF parsing
-- **Vector Database**: ChromaDB integrasjon via Go client (bruker eksisterende `chroma_db/` mappe)
-- **Retrieval**: Hybrid retrieval (semantic + keyword)
-- **RAG Advisor**: Eino ChatModel for rådgenerering
-- **LLM-as-Judge**: Eino ChatModel for evaluering
-- **REST API**: Gin framework for HTTP endpoints
-
-## Installasjon
-
-### 1. Installer Go dependencies
+### 1. Go Dependencies
 ```bash
-cd backend
 go mod download
+go mod tidy
 ```
 
-### 2. Installer Python pdfplumber (for PDF processing)
+### 2. Python Dependencies
 ```bash
-pip install pdfplumber
+pip install pdfplumber chromadb
 ```
 
-### 3. Start ChromaDB (hvis ikke allerede kjørende)
-```bash
-# ChromaDB må kjøre på localhost:8000
-# Viktig: ChromaDB må være konfigurert til å bruke den eksisterende chroma_db/ mappen
-# Se ChromaDB dokumentasjon for installasjon
+### 3. Miljøvariabler
 
-# Eksempel med Docker:
-docker run -p 8000:8000 -v "$(pwd)/chroma_db:/chroma/chroma" chromadb/chroma
+Opprett `.env` fil eller sett i PowerShell:
+```powershell
+$env:OPENAI_API_KEY = "sk-your-openai-api-key"
+$env:PORT = "8000"  # Valgfritt, default er 8000
 ```
 
-## Konfigurasjon
+## 🔧 Konfigurasjon
 
-Opprett `.env` fil:
-```
-OPENAI_API_KEY=sk-your-openai-key
-CHROMA_PATH=../chroma_db
-PORT=8000
-```
+### ChromaDB (Embedded Mode)
 
-## Kjøring
+**Ingen server nødvendig!** Backend bruker ChromaDB i embedded mode via Python:
+- Bruker eksisterende `chroma_db/` mappe direkte
+- Ingen ekstra prosesser eller Docker
+- Eksisterende data er umiddelbart tilgjengelig
 
-```bash
-# Sett OpenAI API key
-$env:OPENAI_API_KEY = "sk-your-openai-key"
+### Eksisterende Mapper
 
-# Kjør serveren
-go run main.go
-```
+Backend bruker eksisterende mapper fra prosjektet:
+- ✅ `chroma_db/` - Vector database (brukes direkte)
+- ✅ `pdf/` - PDF-filer for dokumentprocessing
+- ✅ `ui/` - Frontend UI (allerede oppdatert)
 
-Server starter på `http://localhost:8000`
-
-## API Endpoints
+## 📡 API Endpoints
 
 - `GET /api/v1/health` - Health check
 - `GET /api/v1/buildings` - List all buildings
@@ -84,23 +100,73 @@ Server starter på `http://localhost:8000`
 - `POST /api/v1/evaluate` - Full pipeline (advice + judge)
 - `POST /api/v1/initialize-db` - Process PDFs and store in vector DB
 
-## Eino Framework
+## 🧪 Testing
+
+Åpne `http://localhost:8000` i nettleseren for å bruke UI, eller test API direkte:
+
+```bash
+# Health check
+curl http://localhost:8000/api/v1/health
+
+# List buildings
+curl http://localhost:8000/api/v1/buildings
+
+# Generate advice
+curl -X POST http://localhost:8000/api/v1/advice \
+  -H "Content-Type: application/json" \
+  -d '{"building_id": "building_1"}'
+```
+
+## 🔍 Eino Framework
 
 Alle LLM-kall bruker Eino framework:
-- **ChatModel**: Eino ChatModel med OpenAI provider
-- **EmbeddingModel**: Eino EmbeddingModel med OpenAI provider
-- **Document Processing**: Eino document loaders (via Python for PDF)
+- **ChatModel**: `github.com/cloudwego/eino-ext/components/model/openai`
+  - Brukes i `advisor.go` og `judge.go`
+  - Konfigurert med OpenAI API key
+- **EmbeddingModel**: `github.com/cloudwego/eino-ext/components/model/openai`
+  - Brukes i `vector_db.go` for embeddings
+  - Bruker `text-embedding-3-small` modell
 
-## Testing
+## 🐛 Feilsøking
 
-Åpne `http://localhost:8000` i nettleseren for å bruke UI, eller bruk API direkte.
+### "missing go.sum entry"
+```bash
+go mod tidy
+```
 
-## Eksisterende Data
+### "ChromaDB not available"
+- Sjekk at `chromadb` er installert: `pip install chromadb`
+- Verifiser at Python er tilgjengelig: `python --version`
+- Sjekk at `vector_db.py` finnes i `backend/` mappen
+- Verifiser at `chroma_db/` mappen eksisterer og er lesbar
+
+### "python script failed"
+- Test Python: `python --version`
+- Test ChromaDB: `python -c "import chromadb; print('OK')"`
+- Hvis `python` ikke fungerer, prøv `python3`
+- Eller endre `exec.Command("python", ...)` til `exec.Command("python3", ...)` i `vector_db.go`
+
+### PDF processing feiler
+- Sjekk at Python er installert og `pdfplumber` er installert
+- Test manuelt: `python -c "import pdfplumber; print('OK')"`
+
+### OpenAI API feil
+- Sjekk at `OPENAI_API_KEY` er satt korrekt
+- Verifiser at API key har tilgang til `gpt-4o` og `text-embedding-3-small`
+
+## 📝 Eksisterende Data
 
 Hvis du allerede har prosessert PDF-filer og lagret dem i ChromaDB:
 - ✅ Eksisterende data i `chroma_db/` vil automatisk være tilgjengelig
 - ✅ Du trenger ikke å kalle `/api/v1/initialize-db` på nytt
-- ✅ Bare start ChromaDB-serveren og den nye backend vil bruke eksisterende data
+- ✅ Ingen server trenger å kjøre - backend bruker databasen direkte
 
 Hvis du vil prosessere PDF-filer på nytt eller legge til nye:
 - Kall `POST /api/v1/initialize-db` for å prosessere alle PDF-filer i `pdf/` mappen
+
+## 🎯 Neste Steg
+
+1. Test systemet med forskjellige bygninger
+2. Evaluer rådkvalitet med judge-systemet
+3. Juster prompts i `config.go` basert på resultater
+4. Optimaliser chunking-strategi i `pdf_processor.go`
