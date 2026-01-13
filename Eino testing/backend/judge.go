@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/schema"
@@ -54,9 +55,24 @@ func (j *Judge) Evaluate(adviceText string, building *Building) (*JudgeResponse,
 	}
 
 	// Parse JSON response
+	// Try to extract JSON from response (might be wrapped in markdown code blocks)
+	content := result.Content
+	if len(content) > 0 {
+		// Remove markdown code blocks if present
+		startIdx := 0
+		endIdx := len(content)
+		if idx := findJSONStart(content); idx != -1 {
+			startIdx = idx
+		}
+		if idx := findJSONEnd(content); idx != -1 {
+			endIdx = idx + 1
+		}
+		content = content[startIdx:endIdx]
+	}
+
 	var evaluation JudgeResponse
-	if err := json.Unmarshal([]byte(result.Content), &evaluation); err != nil {
-		return nil, fmt.Errorf("failed to parse evaluation JSON: %w", err)
+	if err := json.Unmarshal([]byte(content), &evaluation); err != nil {
+		return nil, fmt.Errorf("failed to parse evaluation JSON: %w (content: %s)", err, result.Content[:min(200, len(result.Content))])
 	}
 
 	// Ensure total_score matches sum
@@ -105,4 +121,28 @@ HUSK: Du evaluerer KUN struktur, tydelighet og sporbarhet. IKKE om rådet er fag
 Returner JSON med poeng for hvert kriterium (0-2) og total score (0-10).`
 
 	return prompt
+}
+
+func findJSONStart(s string) int {
+	idx := strings.Index(s, "{")
+	if idx == -1 {
+		return -1
+	}
+	return idx
+}
+
+func findJSONEnd(s string) int {
+	// Find last }
+	idx := strings.LastIndex(s, "}")
+	if idx == -1 {
+		return -1
+	}
+	return idx
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

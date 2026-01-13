@@ -90,7 +90,7 @@ func (c *chromaClient) add(ctx context.Context, ids []string, embeddings [][]flo
 
 	cmd := exec.CommandContext(ctx, "python", scriptPath, "add", c.dbPath, collectionName)
 	cmd.Stdin = bytes.NewReader(jsonData)
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -134,7 +134,7 @@ func (c *chromaClient) query(ctx context.Context, queryEmbeddings [][]float32, n
 
 	cmd := exec.CommandContext(ctx, "python", scriptPath, "query", c.dbPath, collectionName)
 	cmd.Stdin = bytes.NewReader(jsonData)
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

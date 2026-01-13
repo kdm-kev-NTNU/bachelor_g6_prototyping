@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,9 +10,9 @@ import (
 
 func healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status":           "running",
-		"version":          "1.0.0",
-		"vector_db_ready":  false, // TODO: check ChromaDB status
+		"status":            "running",
+		"version":           "1.0.0",
+		"vector_db_ready":   false, // TODO: check ChromaDB status
 		"advisor_available": true,
 		"judge_available":   true,
 	})
@@ -25,14 +26,14 @@ func listBuildings(c *gin.Context) {
 func getBuilding(c *gin.Context) {
 	id := c.Param("id")
 	buildings := generateBuildings(10)
-	
+
 	for _, b := range buildings {
 		if b.ID == id {
 			c.JSON(http.StatusOK, b)
 			return
 		}
 	}
-	
+
 	c.JSON(http.StatusNotFound, gin.H{"error": "Bygning ikke funnet"})
 }
 
@@ -84,8 +85,8 @@ func generateAdvice(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, AdviceResponse{
-		Advice:       advice,
-		Citations:    citations,
+		Advice:        advice,
+		Citations:     citations,
 		RetrievedDocs: retrievedDocs,
 		Metadata: map[string]interface{}{
 			"model":       AdvisorModel,
@@ -122,6 +123,7 @@ func evaluateAdvice(c *gin.Context) {
 func fullEvaluation(c *gin.Context) {
 	var req EvaluateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("Error binding JSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -136,13 +138,16 @@ func fullEvaluation(c *gin.Context) {
 	}
 
 	if building == nil {
+		log.Printf("Building not found: %s", req.BuildingID)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Bygning ikke funnet"})
 		return
 	}
 
 	// Initialize advisor
+	log.Printf("Creating advisor...")
 	advisor, err := NewAdvisor()
 	if err != nil {
+		log.Printf("Failed to create advisor: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create advisor: %v", err)})
 		return
 	}
@@ -153,32 +158,43 @@ func fullEvaluation(c *gin.Context) {
 		query = fmt.Sprintf("energieffektivisering %s år gammel bygning %s", building.ConstructionType, building.BuildingType)
 	}
 
+	log.Printf("Retrieving documents with query: %s", query)
 	retrievedDocs, err := retrieveDocuments(query, TopKFinal)
 	if err != nil {
+		log.Printf("Failed to retrieve documents: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to retrieve documents: %v", err)})
 		return
 	}
+	log.Printf("Retrieved %d documents", len(retrievedDocs))
 
 	// Generate advice
+	log.Printf("Generating advice...")
 	advice, citations, err := advisor.GenerateAdvice(building, req.Query, retrievedDocs)
 	if err != nil {
+		log.Printf("Failed to generate advice: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to generate advice: %v", err)})
 		return
 	}
+	log.Printf("Generated advice (length: %d chars)", len(advice))
 
 	// Initialize judge
+	log.Printf("Creating judge...")
 	judge, err := NewJudge()
 	if err != nil {
+		log.Printf("Failed to create judge: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create judge: %v", err)})
 		return
 	}
 
 	// Evaluate advice
+	log.Printf("Evaluating advice...")
 	evaluation, err := judge.Evaluate(advice, building)
 	if err != nil {
+		log.Printf("Failed to evaluate: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to evaluate: %v", err)})
 		return
 	}
+	log.Printf("Evaluation complete. Score: %d/10", evaluation.TotalScore)
 
 	c.JSON(http.StatusOK, EvaluateResponse{
 		Building:   *building,
@@ -194,7 +210,7 @@ func fullEvaluation(c *gin.Context) {
 
 func initializeDatabase(c *gin.Context) {
 	pdfDir := "../pdf"
-	
+
 	// Process PDFs
 	chunks, err := processPDFDirectory(pdfDir)
 	if err != nil {
