@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 from typing import Optional, Tuple, List
 from datetime import datetime, timedelta
+from functools import lru_cache
+import hashlib
 
 # Fix Windows symlink issue for HuggingFace
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -28,21 +30,60 @@ class ChartPredictionService:
     Prediksjonstjeneste for Highcharts tidsseriedata.
     Bruker TimesFM eller fallback sesongbasert prediksjon.
     """
-    
+
     def __init__(self, model_path: str = "google/timesfm-1.0-200m-pytorch"):
         """
         Initialiser prediction service.
-        
+
         Args:
             model_path: HuggingFace model path for TimesFM
         """
         self.model_path = model_path
         self.model = None
         self.is_initialized = False
-        
+        self._prediction_cache = {}  # Cache for prediksjonsresultater
+
         if TIMESFM_AVAILABLE:
             self._initialize_model()
-    
+
+    def _get_cache_key(self, series_data: List[List], forecast_horizon: int,
+                      frequency: str, scenario: Optional[str]) -> str:
+        """Generer cache-nøkkel basert på input-parametere."""
+        # Hash data for å lage unik nøkkel
+        data_str = str(sorted(series_data))  # Sørg for deterministisk rekkefølge
+        params_str = f"{forecast_horizon}_{frequency}_{scenario or 'none'}"
+        combined = f"{data_str}_{params_str}"
+
+        return hashlib.md5(combined.encode()).hexdigest()
+
+    def _get_cached_prediction(self, cache_key: str) -> Optional[dict]:
+        """Hent cachet prediksjon hvis den finnes og ikke er for gammel."""
+        if cache_key in self._prediction_cache:
+            cached = self._prediction_cache[cache_key]
+            # Sjekk om cache er mindre enn 5 minutter gammel
+            if (datetime.now() - cached['timestamp']).seconds < 300:
+                print(f"[CACHE] Bruker cachet prediksjon for {cache_key[:8]}...")
+                return cached['result']
+            else:
+                # Fjern utdatert cache
+                del self._prediction_cache[cache_key]
+
+        return None
+
+    def _cache_prediction(self, cache_key: str, result: dict):
+        """Cache prediksjonsresultat."""
+        self._prediction_cache[cache_key] = {
+            'result': result,
+            'timestamp': datetime.now()
+        }
+
+        # Begrens cache-størrelse til 20 oppføringer
+        if len(self._prediction_cache) > 20:
+            # Fjern eldste oppføring
+            oldest_key = min(self._prediction_cache.keys(),
+                           key=lambda k: self._prediction_cache[k]['timestamp'])
+            del self._prediction_cache[oldest_key]
+
     def _initialize_model(self):
         """Initialiser TimesFM modellen."""
         try:
@@ -80,37 +121,50 @@ class ChartPredictionService:
     ) -> dict:
         """
         Lag prediksjon fra Highcharts seriedata.
-        
+
         Args:
             series_data: Liste med [timestamp, value] par fra Highcharts
             forecast_horizon: Antall perioder å predikere fremover
             frequency: 'D' for daglig, 'H' for time
             scenario: Valgfritt scenario - 'bullish', 'bearish', 'volatile'
-        
+
         Returns:
             Dict med predictions, confidence bounds og metadata
         """
+        # Sjekk cache først
+        cache_key = self._get_cache_key(series_data, forecast_horizon, frequency, scenario)
+        cached_result = self._get_cached_prediction(cache_key)
+        if cached_result:
+            return cached_result
+
         # Konverter til pandas DataFrame
         df = self._chart_data_to_dataframe(series_data)
-        
+
         if df is None or len(df) < 10:
-            return self._empty_prediction_response("Utilstrekkelig data")
-        
+            result = self._empty_prediction_response("Utilstrekkelig data")
+            self._cache_prediction(cache_key, result)
+            return result
+
         # Kjør prediksjon
         if TIMESFM_AVAILABLE and self.is_initialized:
             predictions, metadata = self._timesfm_predict(df, forecast_horizon, frequency)
         else:
             predictions, metadata = self._fallback_predict(df, forecast_horizon, frequency)
-        
+
         # Appliser scenario-modifikasjoner
         if scenario:
             predictions = self._apply_scenario(predictions, scenario)
-        
+
         # Beregn konfidensintervall
         confidence = self._calculate_confidence_bounds(predictions, df)
-        
+
         # Konverter til Highcharts-format
-        return self._format_for_highcharts(predictions, confidence, metadata)
+        result = self._format_for_highcharts(predictions, confidence, metadata)
+
+        # Cache resultatet
+        self._cache_prediction(cache_key, result)
+
+        return result
     
     def _chart_data_to_dataframe(self, series_data: List[List]) -> Optional[pd.DataFrame]:
         """Konverter Highcharts data til pandas DataFrame."""

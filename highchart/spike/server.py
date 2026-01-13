@@ -70,33 +70,51 @@ if OPENAI_AVAILABLE:
 
 class ChartStateInput(BaseModel):
     """Input fra frontend - chart-state som sendes til LLM."""
-    
+
     series_data: list[list] = Field(
         ...,
         alias="seriesData",
         description="Tidsseriedata som [[timestamp, value], ...]"
     )
-    
+
     title: Optional[str] = Field(default=None, description="Chart-tittel")
-    
+
     time_range: dict = Field(
         ...,
         alias="timeRange",
         description="{'start': 'YYYY-MM-DD', 'end': 'YYYY-MM-DD'}"
     )
-    
+
     y_axis_label: Optional[str] = Field(
         default="Value",
         alias="yAxisLabel",
         description="Enhet/label for Y-aksen"
     )
-    
+
     existing_annotations: Optional[list[dict]] = Field(
         default=None,
         alias="existingAnnotations",
         description="Eksisterende annotasjoner (for å unngå duplisering)"
     )
-    
+
+    analysis_period: Optional[str] = Field(
+        default="auto",
+        alias="analysisPeriod",
+        description="Periode å analysere: 'auto', 'all', '1y', '6m', '3m', '1m', 'custom'"
+    )
+
+    custom_start: Optional[str] = Field(
+        default=None,
+        alias="customStart",
+        description="Start-dato for custom periode (YYYY-MM-DD)"
+    )
+
+    custom_end: Optional[str] = Field(
+        default=None,
+        alias="customEnd",
+        description="Slutt-dato for custom periode (YYYY-MM-DD)"
+    )
+
     class Config:
         populate_by_name = True
 
@@ -105,21 +123,43 @@ class ChartStateInput(BaseModel):
 # PROMPT BUILDING
 # ==========================================
 
-def build_analysis_prompt(chart_state: ChartStateInput) -> str:
+def build_analysis_prompt(chart_state: ChartStateInput) -> tuple[str, int, int]:
     """
     Bygger prompt med chart-data for LLM.
     VIKTIG: Inneholder INGEN Highcharts-referanser.
+
+    Returns:
+        Tuple av (prompt, filtered_count, original_count)
     """
-    
-    data = chart_state.series_data
-    sample_size = min(100, len(data))
-    
-    # Ta jevnt fordelte samples
-    if len(data) > sample_size:
+
+    # Filtrer data basert på periode
+    filtered_data, original_count = filter_data_by_period(
+        chart_state.series_data,
+        chart_state.analysis_period,
+        chart_state.custom_start,
+        chart_state.custom_end
+    )
+
+    data = filtered_data if filtered_data else chart_state.series_data
+    filtered_count = len(data)
+
+    # Sampling kun hvis periode er "auto" eller data er veldig stor
+    if chart_state.analysis_period == "auto":
+        sample_size = min(100, len(data))
+        use_sampling = len(data) > sample_size
+    else:
+        # For bruker-valgte perioder, bruk all data (ingen sampling)
+        sample_size = len(data)
+        use_sampling = False
+
+    if use_sampling:
+        # Ta jevnt fordelte samples
         step = len(data) // sample_size
         sampled_data = [data[i] for i in range(0, len(data), step)][:sample_size]
+        actual_sample_size = len(sampled_data)
     else:
         sampled_data = data
+        actual_sample_size = len(data)
     
     # Beregn statistikk
     values = [d[1] for d in data if d[1] is not None]
@@ -129,6 +169,8 @@ def build_analysis_prompt(chart_state: ChartStateInput) -> str:
     stats = {
         "total_points": len(data),
         "sampled_points": len(sampled_data),
+        "filtered_points": filtered_count,
+        "original_points": original_count,
         "min_value": round(min(values), 2),
         "max_value": round(max(values), 2),
         "start_value": round(values[0], 2),
@@ -167,7 +209,7 @@ STATISTIKK:
 IDENTIFISERTE EKSTREMPUNKTER:
 {json.dumps(local_extremes, indent=2)}
 
-DATA (samplet fra {stats['total_points']} punkter):
+DATA ({stats['sampled_points']} punkter fra {stats['filtered_points']} filtrerte, opprinnelig {stats['original_points']}):
 {chr(10).join(formatted_data[:40])}
 {"... og " + str(len(formatted_data) - 40) + " flere punkter" if len(formatted_data) > 40 else ""}
 
@@ -178,7 +220,71 @@ Analyser dataene og identifiser semantiske funn.
 Fokuser på mønstre som IKKE allerede er kjent fra hendelseslisten.
 Returner KUN det spesifiserte JSON-skjemaet."""
     
-    return prompt
+    return prompt, filtered_count, original_count
+
+
+def filter_data_by_period(data: list[list], period: str, custom_start: str = None, custom_end: str = None) -> tuple[list[list], int]:
+    """
+    Filtrer data basert på valgt periode.
+
+    Returns:
+        Tuple av (filtrert_data, original_count)
+    """
+    if not data:
+        return [], 0
+
+    original_count = len(data)
+
+    # Ingen filtrering for 'auto' eller 'all'
+    if period in ["auto", "all"]:
+        return data, original_count
+
+    try:
+        import pandas as pd
+
+        # Konverter til DataFrame for enklere dato-håndtering
+        df = pd.DataFrame(data, columns=['timestamp', 'value'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'] / 1000, unit='s')
+        df = df.sort_values('timestamp')
+
+        # Bruk siste datapunkt som referansetid (ikke "nå" på veggen)
+        if df.empty:
+            return data, original_count
+        reference_end = df['timestamp'].max()
+
+        if period == "1y":
+            cutoff = reference_end - pd.Timedelta(days=365)
+        elif period == "6m":
+            cutoff = reference_end - pd.Timedelta(days=180)
+        elif period == "3m":
+            cutoff = reference_end - pd.Timedelta(days=90)
+        elif period == "1m":
+            cutoff = reference_end - pd.Timedelta(days=30)
+        elif period == "custom" and custom_start:
+            cutoff = pd.to_datetime(custom_start)
+            if custom_end:
+                end_cutoff = pd.to_datetime(custom_end)
+                # Filtrer mellom start og slutt
+                filtered_df = df[(df['timestamp'] >= cutoff) & (df['timestamp'] <= end_cutoff)]
+                filtered_data = filtered_df[['timestamp', 'value']].values.tolist()
+                # Konverter timestamp tilbake til millisekunder
+                filtered_data = [[int(ts.timestamp() * 1000), val] for ts, val in filtered_data]
+                return filtered_data, original_count
+        else:
+            return data, original_count
+
+        # Filtrer fra cutoff til nå
+        filtered_df = df[df['timestamp'] >= cutoff]
+        filtered_data = filtered_df[['timestamp', 'value']].values.tolist()
+
+        # Konverter timestamp tilbake til millisekunder
+        filtered_data = [[int(ts.timestamp() * 1000), val] for ts, val in filtered_data]
+
+        return filtered_data, original_count
+
+    except Exception as e:
+        print(f"[WARN] Kunne ikke filtrere data: {e}")
+        return data, original_count
 
 
 def find_local_extremes(data: list[list], window: int = 20) -> dict:
@@ -262,7 +368,7 @@ async def analyze_chart(chart_state: ChartStateInput) -> dict[str, Any]:
         )
     
     # Bygg prompt
-    user_prompt = build_analysis_prompt(chart_state)
+    user_prompt, filtered_count, original_count = build_analysis_prompt(chart_state)
     
     try:
         # Kall GPT-4o med JSON mode
@@ -295,7 +401,12 @@ async def analyze_chart(chart_state: ChartStateInput) -> dict[str, Any]:
         
         # DETERMINISTISK MAPPING: Konverter semantiske funn til Highcharts
         chart_response = generate_chart_response(analysis)
-        
+
+        # Legg til informasjon om datapunkter brukt
+        chart_response["dataPointsUsed"] = filtered_count
+        chart_response["originalDataPoints"] = original_count
+        chart_response["analysisPeriod"] = chart_state.analysis_period
+
         return chart_response
         
     except json.JSONDecodeError as e:
@@ -373,7 +484,22 @@ class ChatMessage(BaseModel):
         alias="seriesData",
         description="Chart-data for prediksjon (valgfritt)"
     )
-    
+    analysis_period: Optional[str] = Field(
+        default="auto",
+        alias="analysisPeriod",
+        description="Periode å bruke for analyse/prediksjon"
+    )
+    custom_start: Optional[str] = Field(
+        default=None,
+        alias="customStart",
+        description="Start-dato for custom periode"
+    )
+    custom_end: Optional[str] = Field(
+        default=None,
+        alias="customEnd",
+        description="Slutt-dato for custom periode"
+    )
+
     class Config:
         populate_by_name = True
 
@@ -491,9 +617,21 @@ async def chat_with_assistant(chat_input: ChatMessage) -> dict:
     prediction_data = None
     if is_prediction and chat_input.series_data:
         try:
+            # Filtrer data basert på periode (bruker "auto" som standard for chat)
+            period = getattr(chat_input, 'analysis_period', 'auto')
+            custom_start = getattr(chat_input, 'custom_start', None)
+            custom_end = getattr(chat_input, 'custom_end', None)
+
+            filtered_data, original_count = filter_data_by_period(
+                chat_input.series_data,
+                period,
+                custom_start,
+                custom_end
+            )
+
             service = get_prediction_service()
             prediction_result = service.predict_from_chart_data(
-                series_data=chat_input.series_data,
+                series_data=filtered_data if filtered_data else chat_input.series_data,
                 forecast_horizon=horizon or 30,
                 frequency="D",
                 scenario=scenario
@@ -501,7 +639,7 @@ async def chat_with_assistant(chat_input: ChatMessage) -> dict:
             
             if prediction_result.get("success"):
                 analysis = service.analyze_prediction(
-                    chat_input.series_data, 
+                    filtered_data if filtered_data else chat_input.series_data,
                     prediction_result
                 )
                 prediction_data = {
@@ -510,7 +648,9 @@ async def chat_with_assistant(chat_input: ChatMessage) -> dict:
                     "metadata": prediction_result.get("metadata", {}),
                     "analysis": analysis,
                     "horizon": horizon or 30,
-                    "scenario": scenario
+                    "scenario": scenario,
+                    "dataPointsUsed": len(filtered_data) if filtered_data else len(chat_input.series_data),
+                    "periodUsed": period
                 }
         except Exception as e:
             print(f"[WARN] Prediksjon i chat feilet: {e}")
@@ -602,6 +742,20 @@ class PredictionRequest(BaseModel):
         default=None,
         description="Scenario: 'bullish', 'bearish', 'volatile'"
     )
+    period: Optional[str] = Field(
+        default="auto",
+        description="Periode å bruke for prediksjon"
+    )
+    custom_start: Optional[str] = Field(
+        default=None,
+        alias="customStart",
+        description="Start-dato for custom periode"
+    )
+    custom_end: Optional[str] = Field(
+        default=None,
+        alias="customEnd",
+        description="Slutt-dato for custom periode"
+    )
     
     class Config:
         populate_by_name = True
@@ -623,19 +777,39 @@ def get_prediction_service():
 async def predict_future(request: PredictionRequest) -> dict:
     """
     Prediker fremtidige verdier basert på historiske data.
-    
+
     Bruker TimesFM hvis tilgjengelig, ellers fallback til sesongbasert prediksjon.
     Returnerer data klart for Highcharts visualisering.
     """
+    # Filtrer data først hvis periode er spesifisert
+    filtered_data, original_count = filter_data_by_period(
+        request.series_data,
+        request.period,
+        request.custom_start,
+        request.custom_end
+    )
+
+
     service = get_prediction_service()
-    
-    # Kjør prediksjon
+
+    # Kjør prediksjon på filtrert data
     result = service.predict_from_chart_data(
-        series_data=request.series_data,
+        series_data=filtered_data if filtered_data else request.series_data,
         forecast_horizon=request.horizon,
         frequency=request.frequency,
         scenario=request.scenario
     )
+
+    # Legg til informasjon om filtrering
+    result["dataPointsUsed"] = len(filtered_data) if filtered_data else len(request.series_data)
+    result["originalDataPoints"] = original_count
+    result["periodUsed"] = request.period
+
+    # Oppdater metadata med periode-info
+    if "metadata" in result:
+        result["metadata"]["periodUsed"] = request.period
+        result["metadata"]["dataPointsUsed"] = result["dataPointsUsed"]
+        result["metadata"]["originalDataPoints"] = original_count
     
     if not result.get("success"):
         raise HTTPException(

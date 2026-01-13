@@ -454,6 +454,84 @@
             transform: rotate(-45deg);
         }
 
+        .analysis-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .period-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .period-selector label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .period-selector select {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9rem;
+            padding: 0.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .period-selector select:focus {
+            border-color: var(--accent-cyan);
+            outline: none;
+        }
+
+        #custom-dates {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        #custom-dates input[type="date"] {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9rem;
+            padding: 0.4rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+        }
+
+        #custom-dates input[type="date"]:focus {
+            border-color: var(--accent-cyan);
+            outline: none;
+        }
+
+        .data-points-info {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            text-align: center;
+        }
+
+        .data-points-info span {
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        .period-info {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            text-align: center;
+        }
+
+        .period-info span {
+            color: var(--accent-orange);
+            font-weight: 600;
+        }
+
         .quick-actions {
             display: flex;
             gap: 0.5rem;
@@ -709,13 +787,37 @@
                         <span class="icon">📈</span>
                         TSLA Stock Price (Morningstar Data)
                     </div>
-                    <div class="btn-group">
-                        <button class="btn btn-secondary" onclick="clearAllVisualizations()">
-                            🗑️ Fjern visualiseringer
-                        </button>
-                        <button class="btn btn-primary" id="analyze-btn" onclick="analyzeChart()">
-                            🤖 Analyser med AI
-                        </button>
+                    <div class="analysis-controls">
+                        <div class="period-selector">
+                            <label for="analysis-period">Analyse-periode:</label>
+                            <select id="analysis-period" onchange="toggleCustomDates()">
+                                <option value="auto">Auto (100 punkter)</option>
+                                <option value="all">All data</option>
+                                <option value="1y">Siste år</option>
+                                <option value="6m">Siste 6 måneder</option>
+                                <option value="3m">Siste 3 måneder</option>
+                                <option value="1m">Siste måned</option>
+                                <option value="custom">Egendefinert...</option>
+                            </select>
+                            <div id="custom-dates" style="display: none; margin-top: 0.5rem;">
+                                <input type="date" id="start-date" placeholder="Start">
+                                <input type="date" id="end-date" placeholder="Slutt">
+                            </div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary" onclick="clearAllVisualizations()">
+                                🗑️ Fjern visualiseringer
+                            </button>
+                            <button class="btn btn-primary" id="analyze-btn" onclick="analyzeChart()">
+                                🤖 Analyser med AI
+                            </button>
+                        </div>
+                                        <div id="data-points-info" class="data-points-info" style="display: none;">
+                            Bruker <span id="points-count">0</span> datapunkter
+                        </div>
+                        <div id="period-info" class="period-info" style="display: none;">
+                            Periode: <span id="current-period">auto</span>
+                        </div>
                     </div>
                 </div>
                 <div id="chart-container"></div>
@@ -992,6 +1094,7 @@
             addChatMessage('Analyserer chart-data...', 'loading');
             const analysisStartTime = Date.now();
 
+            const periodConfig = getAnalysisPeriodConfig();
             const chartState = {
                 seriesData: chartData,
                 title: 'TSLA Stock Price',
@@ -1000,7 +1103,8 @@
                     end: '2025-03-17'
                 },
                 yAxisLabel: 'USD',
-                existingAnnotations: existingAnnotations
+                existingAnnotations: existingAnnotations,
+                ...periodConfig
             };
 
             try {
@@ -1028,6 +1132,11 @@
 
                 // Legg til deterministisk genererte visualiseringer
                 applyLLMVisualizations(result);
+
+                // Vis datapunkter-info
+                if (result.dataPointsUsed) {
+                    updateDataPointsInfo(result.dataPointsUsed, result.analysisPeriod);
+                }
 
                 // Vis analyse i chat
                 addChatMessage(`**Analyse fullført** (${analysisTime}s)\n\n${result.summary}`, 'analysis');
@@ -1301,6 +1410,7 @@
             addChatMessage('', 'loading');
 
             try {
+                const periodConfig = getAnalysisPeriodConfig();
                 const response = await fetch(`${API_URL}/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1315,7 +1425,8 @@
                             },
                             currentAnalysis: getLastAnalysisSummary()
                         },
-                        seriesData: chartData  // Inkluder data for prediksjon
+                        seriesData: chartData,  // Inkluder data for prediksjon
+                        ...periodConfig  // Inkluder periode-konfigurasjon
                     })
                 });
 
@@ -1333,6 +1444,13 @@
                     try {
                         addPredictionSeries(result.predictionData);
                         addChatMessage(result.response, 'prediction');
+                        // Vis periode-info for prediksjoner
+                        if (result.predictionData.metadata) {
+                            updateDataPointsInfo(
+                                result.predictionData.dataPointsUsed,
+                                result.predictionData.metadata.periodUsed || 'auto'
+                            );
+                        }
                     } catch (error) {
                         console.error('Error adding prediction series:', error);
                         addChatMessage(result.response + '\n\n(Kunne ikke vise prognose på chartet)', 'assistant');
@@ -1492,6 +1610,51 @@
                 return messages[messages.length - 1].textContent;
             }
             return null;
+        }
+
+        function toggleCustomDates() {
+            const period = document.getElementById('analysis-period').value;
+            const customDates = document.getElementById('custom-dates');
+            customDates.style.display = period === 'custom' ? 'flex' : 'none';
+        }
+
+        // Initialiser periode-selector
+        document.addEventListener('DOMContentLoaded', () => {
+            // Andre initialiseringer...
+            toggleCustomDates(); // Sørg for at custom dates er riktig skjult/vist ved start
+        });
+
+        function getAnalysisPeriodConfig() {
+            const period = document.getElementById('analysis-period').value;
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+
+            return {
+                analysisPeriod: period,
+                customStart: startDate,
+                customEnd: endDate
+            };
+        }
+
+        function updateDataPointsInfo(count, period = null) {
+            const infoEl = document.getElementById('data-points-info');
+            const countEl = document.getElementById('points-count');
+            const periodEl = document.getElementById('period-info');
+            const periodTextEl = document.getElementById('current-period');
+
+            if (count > 0) {
+                countEl.textContent = count.toLocaleString();
+                infoEl.style.display = 'block';
+            } else {
+                infoEl.style.display = 'none';
+            }
+
+            if (period) {
+                periodTextEl.textContent = period;
+                periodEl.style.display = 'block';
+            } else {
+                periodEl.style.display = 'none';
+            }
         }
 
         function askQuickQuestion(question) {

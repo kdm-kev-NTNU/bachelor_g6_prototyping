@@ -1,0 +1,231 @@
+# TimesFM + Highcharts Integrasjon
+
+## Oversikt
+
+Google TimesFM tidsserie-modell integrert med Highcharts visualiseringssystem i Highcharts-LLM Analyzer v0.3.
+
+## Arkitektur
+
+```
+Highcharts Data ──► TimesFM Predictor ──► Highcharts Visualization
+     │                       │                        │
+     │ [timestamp, value]    │ Pandas DataFrame       │ Series + Annotations
+     │ arrays                │                        │
+     └──────────────────────►│                        │
+                            ▼                        ▼
+                    Prediction Service       Frontend Renderer
+```
+
+## Viktige Komponenter
+
+### 1. Prediction Service (`prediction_service.py`)
+- **ChartPredictionService**: Hovedklasse for prediksjoner
+- **Data-transformasjon**: Highcharts arrays → Pandas DataFrame → TimesFM
+- **Fallback-system**: Sesongbasert prediksjon når TimesFM ikke er tilgjengelig
+- **Scenario-støtte**: bullish/bearish/volatile modifikasjoner
+- **Caching**: Automatisk caching av prediksjonsresultater (5 min timeout)
+
+### 2. API Endepunkter
+- `/predict`: Direkte prediksjon med scenarioer
+- `/chat`: Naturlig språk → automatisk prediksjon + visualisering
+
+### 3. Frontend Visualisering
+- **Stiplet oransje linje**: Hovedprediksjon
+- **To stiplete linjer**: Øvre/nedre konfidensgrense
+- **Vertikal markør**: Prognose-start
+- **Ingen ekstra Highcharts-moduler** kreves
+
+## Dataflyt
+
+1. **Input**: Highcharts seriedata `[[timestamp_ms, value], ...]`
+2. **Transformasjon**: Konverteres til Pandas DataFrame med datetime
+3. **Prediksjon**: TimesFM eller sesongbasert fallback
+4. **Scenario**: Appliser bullish/bearish/volatile modifikasjoner
+5. **Konfidens**: Beregn 95% intervall med økende usikkerhet
+6. **Output**: Highcharts-kompatibelt format
+7. **Visualisering**: Legg til serier i chart
+
+## Scenario-System
+
+| Scenario | Effekt |
+|----------|--------|
+| `bullish` | Øker trend med 20% |
+| `bearish` | Reduserer trend med 20% |
+| `volatile` | Legger til ekstra volatilitet |
+
+## Chat-Integrasjon
+
+### Intent-deteksjon
+- **Nøkkelord**: "hva skjer", "fremtid", "prediksjon", "prognose"
+- **Tidsekstraksjon**: "30 dager", "2 uker", "neste måned"
+- **Scenario-deteksjon**: Naturlig språk til bullish/bearish
+
+### Eksempel
+```
+Bruker: "Hva kan skje neste 30 dager med bullish scenario?"
+System: Oppdager prediksjon-intent → kjører TimesFM → returnerer tekst + visualiseringsdata
+Frontend: Viser stiplet prognose-linje + konfidensintervall på chart
+```
+
+## Robusthet
+
+### TimesFM Fallback
+- **Windows-kompatibilitet**: Symlink-fikser + fallback
+- **Import-feil**: Graceful degradation til sesongbasert
+- **Prediksjon-feil**: Automatisk aktivering av backup-metode
+
+### Sesongbasert Fallback
+- **Trend-analyse**: Lineær regresjon på historiske data
+- **Sesongmønstre**: Detekterer døgnlige/ukentlige mønstre
+- **Støy**: Realistisk variasjon basert på historisk volatilitet
+
+## Performance
+
+- **Lazy loading**: PredictionService lastes ved første bruk
+- **Sampling**: Reduserer data for LLM (2000→100 punkter) - **SE NESTE SEKSJON**
+- **Resultat-caching**: Unngår dupliserte prediksjoner (5 min timeout)
+- **Asynkrone kall**: Frontend blokkerer ikke
+- **Fallback-hastighet**: Umiddelbar respons
+
+## Brukerstyrt Tidsperiode
+
+### Hvorfor sampling?
+1. **Token-grenser**: LLM-er har begrenset kontekst (typisk 4K-32K tokens)
+2. **Ytelse**: Store datasett tar lengre tid å prosessere
+3. **Relevans**: Historiske data lengre tilbake har mindre prediktiv kraft
+
+### Nåværende implementasjon
+```python
+# I analysis_schema.py - build_analysis_prompt()
+sample_size = min(100, len(data))  # Maks 100 punkter
+if len(data) > sample_size:
+    step = len(data) // sample_size
+    sampled_data = [data[i] for i in range(0, len(data), step)][:sample_size]
+```
+
+### Løsning: Bruker-valgt tidsperiode
+
+#### 1. UI for periode-valg
+```javascript
+// Legg til i index.html
+<div class="period-selector">
+    <label>Analyse-periode:</label>
+    <select id="analysis-period">
+        <option value="all">All data</option>
+        <option value="1y">Siste år</option>
+        <option value="6m">Siste 6 måneder</option>
+        <option value="3m">Siste 3 måneder</option>
+        <option value="1m">Siste måned</option>
+        <option value="custom">Egendefinert...</option>
+    </select>
+    <input type="date" id="start-date" style="display:none">
+    <input type="date" id="end-date" style="display:none">
+</div>
+```
+
+#### 2. Filtrering i backend
+```python
+# Utvid ChartStateInput
+class ChartStateInput(BaseModel):
+    time_range: Optional[dict] = Field(alias="timeRange")
+    analysis_period: Optional[str] = Field(default="auto", alias="analysisPeriod")
+    custom_start: Optional[str] = Field(alias="customStart")
+    custom_end: Optional[str] = Field(alias="customEnd")
+
+# I build_analysis_prompt()
+def filter_data_by_period(data: list, period: str, custom_start=None, custom_end=None):
+    if period == "all":
+        return data
+
+    # Konverter til datetime for filtrering
+    now = datetime.now()
+
+    if period == "1y":
+        cutoff = now - timedelta(days=365)
+    elif period == "6m":
+        cutoff = now - timedelta(days=180)
+    elif period == "3m":
+        cutoff = now - timedelta(days=90)
+    elif period == "1m":
+        cutoff = now - timedelta(days=30)
+    elif period == "custom" and custom_start:
+        cutoff = pd.to_datetime(custom_start)
+        if custom_end:
+            end_cutoff = pd.to_datetime(custom_end)
+            return [d for d in data if cutoff <= pd.to_datetime(d[0]/1000) <= end_cutoff]
+    else:
+        return data
+
+    # Filtrer data etter cutoff
+    return [d for d in data if pd.to_datetime(d[0]/1000) >= cutoff]
+```
+
+#### 3. Frontend-integrasjon
+```javascript
+// I analyzeChart()
+const period = document.getElementById('analysis-period').value;
+const startDate = document.getElementById('start-date').value;
+const endDate = document.getElementById('end-date').value;
+
+const chartState = {
+    seriesData: chartData,
+    title: 'TSLA Stock Price',
+    timeRange: { start: '2017-01-01', end: '2025-03-17' },
+    analysisPeriod: period,
+    customStart: startDate,
+    customEnd: endDate
+};
+```
+
+#### 4. Bruk i prediksjon
+```python
+# I predict_from_chart_data()
+def predict_from_chart_data(self, series_data, horizon, frequency, scenario, period="auto"):
+    # Filtrer data etter bruker-valgt periode før prediksjon
+    filtered_data = filter_data_by_period(series_data, period)
+
+    df = self._chart_data_to_dataframe(filtered_data)
+    # Resten av prediksjon...
+```
+
+### Eksempler på bruk
+
+| Periode | Beskrivelse | Fordeler |
+|---------|-------------|----------|
+| `all` | All tilgjengelig data | Maksimal kontekst, tregere |
+| `1y` | Siste år | Balanse mellom kontekst og ytelse |
+| `3m` | Siste 3 måneder | Fokus på nylig data, raskest |
+| `custom` | Bruker-definert | Full kontroll |
+
+### Implementasjon-strategi
+
+1. **Start enkelt**: Legg til periode-valg i UI
+2. **Filtrering**: Implementer backend-filtrering
+3. **Feedback**: Vis hvor mange datapunkter som brukes
+4. **Fallback**: Bruk "auto" (nåværende sampling) som standard
+
+Dette gir brukeren kontroll over hvilke data som brukes til analyse og prediksjon!
+
+## Konfidensintervall
+
+- **95% konfidens**: prediksjon ± (1.96 × standardavvik)
+- **Økende usikkerhet**: Usikkerhet vokser lineært over tid
+- **Nedre grense**: Minimum 0 for positive tidsserier
+- **Visualisering**: To separate stiplete linjer (ikke arearange)
+
+## Testing
+
+```python
+# Enkel test
+test_data = [[1704067200000, 100.0], [1704153600000, 102.0], ...]
+service = ChartPredictionService()
+result = service.predict_from_chart_data(test_data, horizon=30)
+# Returnerer: predictions, confidenceRange, metadata, analysis
+```
+
+## Utvidelsesmuligheter
+
+- **Ensemble-prediksjoner**: Kombiner flere modeller
+- **Flere scenarioer**: Custom bruker-definerte scenarioer
+- **Real-time**: WebSocket for live oppdateringer
+- **Multi-serie**: Prediksjoner for flere tidsserier samtidig

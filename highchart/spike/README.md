@@ -99,6 +99,13 @@ Prognoser vises på chartet som:
 - **Oransje skyggefelt** - 95% konfidensintervall
 - **Vertikal markør** - Skille mellom historikk og prognose
 
+### Caching & Performance
+
+- **Smart caching**: Identiske prediksjoner caches i 5 minutter
+- **Lazy loading**: TimesFM lastes kun ved første bruk
+- **Periode-filtrering**: Bruker data filtreres før prediksjon
+- **Fallback-hastighet**: Sesongbasert prediksjon er umiddelbar
+
 ## 🔍 Finding Types (Semantiske Funn)
 
 | Type | Beskrivelse | Visualisering |
@@ -192,6 +199,8 @@ ANNOTATION_PRESETS["UNUSUAL_PEAK"]["background_color"] = "#ff00ff"
 | Ustabil output | Strengt JSON schema | + Interaktiv chat |
 | - | - | + TimesFM / fallback |
 | - | - | + Scenario-støtte |
+| - | - | + Brukerstyrt tidsperiode |
+| - | - | + Prediksjon caching |
 
 ## 🛠️ Feilsøking
 
